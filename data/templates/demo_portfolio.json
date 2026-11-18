@@ -1,0 +1,22 @@
+{
+  "_note": "DEMO sample portfolio for testing the pipeline. Invented trades on real symbols - NOT real holdings. Same shape as the dashboard backup/sync file.",
+  "version": 1,
+  "demo": true,
+  "transactions": [
+    {"id": "d01", "date": "2025-11-23", "symbol": "NABIL", "type": "BUY", "qty": 200, "price": 498, "notes": "DEMO"},
+    {"id": "d02", "date": "2025-12-14", "symbol": "NTC", "type": "BUY", "qty": 60, "price": 880, "notes": "DEMO"},
+    {"id": "d03", "date": "2026-01-11", "symbol": "SHPC", "type": "BUY", "qty": 150, "price": 505, "notes": "DEMO"},
+    {"id": "d04", "date": "2026-01-25", "symbol": "NABIL", "type": "BUY", "qty": 100, "price": 525, "notes": "DEMO"},
+    {"id": "d05", "date": "2026-02-15", "symbol": "NLIC", "type": "BUY", "qty": 80, "price": 760, "notes": "DEMO"},
+    {"id": "d06", "date": "2026-03-08", "symbol": "UPPER", "type": "BUY", "qty": 300, "price": 205, "notes": "DEMO"},
+    {"id": "d07", "date": "2026-04-19", "symbol": "SHPC", "type": "SELL", "qty": 50, "price": 560, "notes": "DEMO"},
+    {"id": "d08", "date": "2026-05-10", "symbol": "CBBL", "type": "BUY", "qty": 40, "price": 980, "notes": "DEMO"},
+    {"id": "d09", "date": "2026-06-14", "symbol": "HRL", "type": "IPO", "qty": 10, "price": 100, "notes": "DEMO"},
+    {"id": "d10", "date": "2026-09-30", "symbol": "NABIL", "type": "BONUS", "qty": 15, "price": 0, "notes": "DEMO"},
+    {"id": "d11", "date": "2026-10-05", "symbol": "NABIL", "type": "DIVIDEND", "qty": 300, "price": 10.8, "notes": "DEMO"},
+    {"id": "d12", "date": "2026-10-18", "symbol": "UPPER", "type": "SELL", "qty": 100, "price": 190, "notes": "DEMO"}
+  ],
+  "watchlist": [{"symbol": "SANIMA", "list": "watch", "buyLow": 370, "buyHigh": 400, "targetSell": 450}],
+  "plans": {"NABIL": {"target": 545, "stop": 480}, "UPPER": {"stop": 195}},
+  "settings": {"engine": {"method": "WACC", "bonusCostBasis": 0, "bonusTaxBasis": 100}, "concentrationPct": 30}
+}

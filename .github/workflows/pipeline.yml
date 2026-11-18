@@ -1,0 +1,135 @@
+name: Market pipeline and deploy
+
+# Collects market data, runs analysis/news/alerts/reports and publishes the dashboard to GitHub Pages.
+# Times are UTC. Nepal time (NPT) = UTC + 5:45. NEPSE trades Sunday-Thursday 11:00-15:00 NPT.
+# GitHub may start scheduled runs several minutes late; the script decides what to do from the
+# actual Nepal clock (scripts/run_pipeline.py auto), so a late start still does the right job.
+#
+# PRIVACY: on a public repository this log is readable by anyone. The pipeline therefore never prints
+# anything built from the private portfolio here (not even in a dry run) - only counts and status.
+on:
+  schedule:
+    - cron: '45 4 * * 0-4'        # 10:30 NPT  pre-market brief
+    - cron: '15,45 5-8 * * 0-4'   # 11:00-14:30 NPT  every 30 min during trading
+    - cron: '15 9 * * 0-4'        # 15:00 NPT  close
+    - cron: '35 9 * * 0-4'        # 15:20 NPT  post-close update, P&L and alerts
+    - cron: '15 12 * * *'         # 18:00 NPT  evening report (weekly on Friday, monthly on the 1st)
+  workflow_dispatch:
+    inputs:
+      command:
+        description: 'Pipeline command'
+        type: choice
+        default: auto
+        options: [auto, all, collect, analyze, news, alerts, 'report premarket', 'report daily', 'report weekly', 'report monthly', test-telegram]
+      dry_run:
+        description: 'Dry run: send nothing. (Portfolio-based content is never shown in this log.)'
+        type: boolean
+        default: false
+  push:
+    branches: [main]
+    paths: ['frontend/**', 'config/**', 'backend/**', 'analytics/**', 'ai_engine/**', 'notifications/**', 'scripts/**', 'data/private/portfolio.enc.json', '.github/workflows/pipeline.yml']
+
+permissions:
+  contents: write     # push the market-data branch
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pipeline
+  cancel-in-progress: false
+
+jobs:
+  pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Restore market-data branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          REMOTE="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          if git ls-remote --exit-code --heads "$REMOTE" market-data >/dev/null 2>&1; then
+            git clone --quiet --depth 1 --branch market-data "$REMOTE" _data
+          else
+            mkdir _data && git -C _data init --quiet -b market-data && git -C _data remote add origin "$REMOTE"
+          fi
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - run: pip install --quiet cryptography
+
+      - name: Run pipeline
+        id: pipeline
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          PORTFOLIO_PASSPHRASE: ${{ secrets.PORTFOLIO_PASSPHRASE }}
+          PORTFOLIO_JSON: ${{ secrets.PORTFOLIO_JSON }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          DRY_RUN: ${{ inputs.dry_run && '1' || '0' }}
+          # a code push refreshes data and redeploys; it does not send reports
+          COMMAND: ${{ github.event_name == 'push' && 'all' || inputs.command || 'auto' }}
+        run: python -m scripts.run_pipeline $COMMAND --out _data
+        continue-on-error: true      # a failed stage must not block publishing the last good data + status
+
+      - name: Save market-data branch (single commit, no history bloat)
+        run: |
+          cd _data
+          git config user.name "nepse-pipeline"
+          git config user.email "actions@users.noreply.github.com"
+          git checkout --quiet --orphan snapshot
+          git add -A
+          git commit --quiet -m "Market data snapshot $(date -u +%Y-%m-%dT%H:%MZ)" || exit 0
+          git push --quiet --force origin snapshot:market-data
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Build dashboard
+        working-directory: frontend
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+      - name: Add market data to the site (public market data only)
+        run: |
+          mkdir -p frontend/dist/data
+          rsync -a --exclude '.git' --exclude 'state' _data/ frontend/dist/data/
+          test -f frontend/dist/data/prices.json || echo "::warning title=No market data yet::The site was built without prices.json. Check the 'Run pipeline' step: every price source may have refused the request."
+
+      - name: Check that GitHub Pages is set up
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          code=$(curl -s -o pages.json -w "%{http_code}" -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/${GITHUB_REPOSITORY}/pages")
+          if [ "$code" = "404" ]; then
+            echo "::warning title=GitHub Pages is not enabled yet::Open Settings > Pages, set Source to 'GitHub Actions', then re-run this workflow. Market data was collected and saved; only publishing the site is pending."
+          elif [ "$code" = "200" ] && ! grep -q '"build_type": *"workflow"' pages.json; then
+            echo "::warning title=GitHub Pages source is not 'GitHub Actions'::Open Settings > Pages and change Source to 'GitHub Actions', then re-run this workflow."
+          fi
+          rm -f pages.json
+
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: frontend/dist
+      - id: deploy
+        uses: actions/deploy-pages@v5
+
+      - name: Report pipeline result
+        if: ${{ always() && steps.pipeline.outcome == 'failure' }}
+        run: |
+          echo "::error title=A pipeline stage failed::Open the 'Run pipeline' step to see which stage failed. Whatever data was collected was still saved and published."
+          exit 1

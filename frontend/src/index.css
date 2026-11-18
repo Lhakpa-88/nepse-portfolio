@@ -1,0 +1,31 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: 244 246 249; --panel: 255 255 255; --line: 222 227 234; --ink: 17 24 39; --mute: 100 116 139;
+  --accent: 2 132 199; --up: 21 128 61; --down: 220 38 38; --warn: 180 83 9;
+}
+.dark {
+  --bg: 10 14 20; --panel: 17 23 31; --line: 36 46 60; --ink: 226 232 240; --mute: 132 146 166;
+  --accent: 56 189 248; --up: 34 197 94; --down: 248 113 113; --warn: 245 158 11;
+}
+html, body, #root { height: 100%; }
+body { @apply bg-bg text-ink antialiased; font-family: Inter, 'Segoe UI', system-ui, sans-serif; font-size: 14px; }
+.num { font-variant-numeric: tabular-nums; }
+
+@layer components {
+  .card { @apply rounded-lg border border-line bg-panel; }
+  .btn { @apply inline-flex items-center justify-center gap-1.5 rounded-md border border-line bg-panel px-3 py-1.5 text-sm font-medium text-ink transition hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-50; }
+  .btn-primary { @apply border-accent bg-accent text-white hover:text-white hover:opacity-90; }
+  .dark .btn-primary { @apply text-slate-950 hover:text-slate-950; }
+  .btn-danger { @apply border-down/50 text-down hover:border-down hover:text-down; }
+  .input { @apply w-full rounded-md border border-line bg-bg px-2.5 py-1.5 text-sm text-ink outline-none placeholder:text-mute focus:border-accent; }
+  .label { @apply mb-1 block text-xs font-medium uppercase tracking-wide text-mute; }
+  .th { @apply whitespace-nowrap px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-mute; }
+  .td { @apply whitespace-nowrap px-3 py-2 text-sm; }
+  .chip { @apply inline-flex items-center rounded px-1.5 py-0.5 text-xs font-semibold; }
+}
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: rgb(var(--line)); border-radius: 4px; }
+@media print { aside, header .no-print, .no-print { display: none !important; } body { background: #fff; } }

@@ -1,0 +1,336 @@
+"""Tests for indicators, scoring with incomplete data, calendar, failover, encryption, alert noise control
+and the rule that nothing built from the private portfolio reaches a public CI log."""
+import contextlib
+import io
+import json
+import os
+import tempfile
+import unittest
+from datetime import datetime
+from pathlib import Path
+from unittest import mock
+
+from ai_engine import news
+from analytics import scoring as sc
+from analytics import technicals as ta
+from backend import collect, market_calendar as cal, secure_store, sources
+from notifications import alerts, telegram
+from scripts import run_pipeline
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+class TechnicalsTest(unittest.TestCase):
+    def test_sma_and_insufficient_history(self):
+        self.assertEqual(ta.sma([1, 2, 3, 4], 2), 3.5)
+        self.assertIsNone(ta.sma([1, 2], 5))
+        self.assertIsNone(ta.rsi([1, 2, 3]))
+        self.assertIsNone(ta.macd(list(range(20))))
+
+    def test_rsi_extremes(self):
+        self.assertEqual(ta.rsi([float(i) for i in range(1, 40)]), 100.0)          # only gains
+        self.assertAlmostEqual(ta.rsi([float(40 - i) for i in range(1, 40)]), 0.0)  # only losses
+
+    def test_rsi_known_value(self):
+        # Wilder's textbook series -> RSI(14) of the 15th close is 70.46
+        closes = [44.34, 44.09, 44.15, 43.61, 44.33, 44.83, 45.10, 45.42, 45.84, 46.08, 45.89, 46.03, 45.61, 46.28, 46.28]
+        self.assertAlmostEqual(ta.rsi(closes), 70.46, delta=0.1)
+
+    def test_bollinger_and_drawdown(self):
+        b = ta.bollinger([10.0] * 20)
+        self.assertEqual((b["upper"], b["lower"], b["mid"]), (10.0, 10.0, 10.0))
+        self.assertAlmostEqual(ta.max_drawdown([100, 120, 90, 110]), -25.0)
+
+    def test_breakout_detection(self):
+        rows = [[f"2025-01-{i:02d}", 100, 101, 99, 100, 1000] for i in range(1, 29)]
+        rows.append(["2025-01-29", 100, 110, 100, 109, 5000])   # closes above the 20-day high on 5x volume
+        t = ta.analyse(rows)
+        self.assertTrue(t["breakout"])
+        self.assertFalse(t["breakdown"])
+        self.assertAlmostEqual(t["volRatio"], 5.0)
+
+
+class ScoringIncompleteDataTest(unittest.TestCase):
+    def test_no_fundamentals_never_yields_buy(self):
+        # accelerating uptrend with a small pullback every 5th session (a straight line would give a flat MACD)
+        px = [100 * 1.004 ** i * (0.99 if i % 5 == 0 else 1.0) for i in range(260)]
+        rows = [[f"d{i}", None, p * 1.005, p * 0.995, p, 10000] for i, p in enumerate(px)]
+        t = ta.analyse(rows)
+        parts = {"fundamental": sc.fundamental_score(None, "Hydro Power", {}), "technical": sc.technical_score(t),
+                 "valuation": sc.valuation_score(360, None, {})}
+        parts["market"] = sc.market_score({"score": 80}, {}, None)
+        parts["risk"] = sc.risk_score(t, None, parts["valuation"], "Hydro Power", {"low": 35, "medium": 60})
+        q, coverage = sc.combine(parts, {"fundamental": 35, "technical": 25, "valuation": 15, "market": 15, "risk": 10})
+        stance, reasons = sc.stance(q, parts, {"buy": 70, "accumulate": 60, "hold": 45, "reduce": 35})
+        self.assertEqual(parts["technical"]["outlook"], "Bullish")
+        self.assertEqual(stance, "WATCH")                      # bullish chart alone is not a recommendation
+        self.assertIn("Incomplete", reasons[0])
+        self.assertLess(coverage, 0.6)                          # confidence input drops with missing areas
+
+    def test_loss_making_company_scores_zero_on_earnings(self):
+        f = {"eps": -5, "roe": -3, "bookValue": 90, "dividends": []}
+        self.assertEqual(sc.fundamental_score(f, "Hydro Power", {})["components"]["earnings"], 0.0)
+        self.assertEqual(sc.valuation_score(200, f, {})["components"]["pe"], 0.0)
+
+    def test_short_history_reports_gap(self):
+        t = ta.analyse([[f"d{i}", None, 10, 9, 10, 100] for i in range(10)])
+        self.assertIsNone(sc.technical_score(t)["score"])
+
+
+class CalendarTest(unittest.TestCase):
+    def at(self, s):
+        return datetime.fromisoformat(s).replace(tzinfo=cal.NPT)
+
+    def test_sessions(self):
+        self.assertEqual(cal.session(self.at("2026-11-17T12:00")), "open")      # Tuesday
+        self.assertEqual(cal.session(self.at("2026-11-17T10:00")), "pre")
+        self.assertEqual(cal.session(self.at("2026-11-17T15:30")), "post")
+        self.assertEqual(cal.session(self.at("2026-11-20T12:00")), "closed")    # Friday
+        self.assertEqual(cal.session(self.at("2026-11-21T12:00")), "closed")    # Saturday
+        self.assertEqual(cal.session(self.at("2026-11-22T12:00")), "open")      # Sunday trades
+
+    def test_freshness_never_hides_stale_prices(self):
+        now = self.at("2026-11-17T16:00")
+        self.assertEqual(cal.freshness("2026-11-17", now)["state"], "fresh")
+        self.assertEqual(cal.freshness("2026-11-16", now)["state"], "delayed")
+        self.assertEqual(cal.freshness("2026-11-12", now)["state"], "stale")
+        self.assertEqual(cal.freshness(None, now)["state"], "unavailable")
+        # Saturday: Thursday's close is still the latest expected session
+        self.assertEqual(cal.freshness("2026-11-19", self.at("2026-11-21T12:00"))["state"], "fresh")
+
+
+class SourceFailoverTest(unittest.TestCase):
+    def test_falls_back_and_records_health(self):
+        good = [{"symbol": "X", "ltp": 10.0, "asOf": "2026-11-17T15:00:00"}]
+        with mock.patch.object(sources.PROVIDERS["sharehub"], "prices", side_effect=sources.SourceError("boom")), \
+                mock.patch.object(sources.PROVIDERS["nepalipaisa"], "prices", return_value=good):
+            reg = sources.Registry()
+            data, used = reg.call("prices")
+        self.assertEqual(used, "nepalipaisa")
+        self.assertEqual(reg.log["prices"]["role"], "secondary")
+        self.assertIn("sharehub", reg.log["prices"]["errors"][0])
+
+    def test_total_failure_raises_and_writes_no_prices(self):
+        with tempfile.TemporaryDirectory() as d, mock.patch.multiple(sources.PROVIDERS["sharehub"], prices=mock.Mock(side_effect=sources.SourceError("x"))), \
+                mock.patch.object(sources.PROVIDERS["nepalipaisa"], "prices", side_effect=sources.SourceError("x")), \
+                mock.patch.object(sources.PROVIDERS["chukul"], "prices", side_effect=sources.SourceError("x")):
+            reg = sources.Registry()
+            self.assertIsNone(collect.collect_prices(Path(d), reg))
+            self.assertFalse((Path(d) / "prices.json").exists())      # nothing fabricated
+            self.assertFalse(reg.log["prices"]["ok"])
+            status = collect.write_status(Path(d), reg, None)
+            self.assertEqual(status["freshness"]["state"], "unavailable")
+            self.assertEqual(status["reliability"], "down")
+
+
+class EncryptionTest(unittest.TestCase):
+    def test_roundtrip_and_wrong_passphrase(self):
+        try:
+            import cryptography  # noqa: F401
+        except ImportError:
+            self.skipTest("cryptography not installed")
+        blob = secure_store.encrypt_blob({"transactions": [{"symbol": "DEMO"}]}, "correct horse battery", iterations=1000)
+        self.assertNotIn("DEMO", json.dumps(blob))
+        self.assertEqual(secure_store.decrypt_blob(blob, "correct horse battery")["transactions"][0]["symbol"], "DEMO")
+        with self.assertRaises(Exception):
+            secure_store.decrypt_blob(blob, "wrong passphrase")
+
+
+class NewsTest(unittest.TestCase):
+    COMPANIES = {"NABIL": {"name": "Nabil Bank Limited", "sector": "Commercial Banks"}}
+
+    def test_classification(self):
+        c = news.classify({"title": "Nabil Bank Limited proposes 10% cash dividend", "url": "u1", "source": "s", "official": True}, self.COMPANIES)
+        self.assertEqual((c["category"], c["impact"], c["sentiment"], c["symbols"]), ("Dividend", "High", "Positive", ["NABIL"]))
+        c = news.classify({"title": "NRB unveils monetary policy for the fiscal year", "url": "u2", "source": "s", "official": True}, self.COMPANIES)
+        self.assertEqual(c["impact"], "Critical")
+        c = news.classify({"title": "Government spends 23% of annual budget in four months", "url": "u3", "source": "s"}, self.COMPANIES)
+        self.assertNotEqual(c["impact"], "Critical")
+        c = news.classify({"title": "Company may announce bonus shares, sources say", "url": "u4", "source": "s", "official": True}, self.COMPANIES)
+        self.assertFalse(c["confirmed"])                         # speculation is never marked confirmed
+
+    def test_dedupe(self):
+        a = news.classify({"title": "Nabil Bank proposes 10% cash dividend for FY 2082/83", "url": "a", "source": "x"}, self.COMPANIES)
+        b = news.classify({"title": "Nabil Bank proposes 10% cash dividend for FY 2082/83 ", "url": "b", "source": "y"}, self.COMPANIES)
+        self.assertEqual(len(news.dedupe([a, b, dict(a)])), 1)
+
+
+DEMO_TEXT = (ROOT / "data" / "templates" / "demo_portfolio.json").read_text(encoding="utf-8")
+PIPELINE_ENV = ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "EMAIL_TO",
+                "PORTFOLIO_PASSPHRASE", "PORTFOLIO_JSON", "ANTHROPIC_API_KEY", "GITHUB_ACTIONS", "DRY_RUN")
+FAKE_TOKEN = "1234567890:TEST-ONLY-not-a-real-bot-token-000000"
+# strings that exist only in portfolio-derived output: holdings, cost basis, P&L wording
+PRIVATE_MARKERS = ("NABIL", "UPPER", "484.68", "Average Cost", "Unrealized", "Stop-loss")
+
+
+def clean_env(**overrides):
+    """os.environ with every pipeline secret/flag removed, then `overrides` applied (restored afterwards)."""
+    env = {k: v for k, v in os.environ.items() if k not in PIPELINE_ENV}
+    env.update(overrides)
+    return mock.patch.dict(os.environ, env, clear=True)
+
+
+def write_market(d: Path, state: str = "fresh") -> None:
+    """Minimal DEMO data directory: NABIL has fallen through the DEMO stop-loss of 480."""
+    collect.write_json(d / "prices.json", {"marketDate": "2026-11-17", "asOf": "2026-11-17T15:00:00", "rows": [
+        {"symbol": "NABIL", "ltp": 470.0, "prevClose": 500.0, "pctChange": -6.0},
+        {"symbol": "UPPER", "ltp": 210.0, "prevClose": 209.0, "pctChange": 0.5}]})
+    collect.write_json(d / "analysis.json", {"stocks": {}, "top10": []})
+    collect.write_json(d / "status.json", {"freshness": {"state": state, "message": "Prices are 3 trading sessions old."}})
+    collect.write_json(d / "news.json", {"items": [], "newIds": []})
+
+
+class AlertTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.d = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def found(self, state="fresh"):
+        write_market(self.d, state)
+        return alerts.generate(alerts.build_context(json.loads(DEMO_TEXT), self.d))
+
+    def state(self):
+        return collect.read_json(self.d / "state" / "alerts.json", None)
+
+    def test_stop_loss_alert_and_cooldown(self):
+        found = self.found()
+        stop = [a for a in found if a["kind"] == "stop"]
+        self.assertEqual(len(stop), 1)                            # NABIL 470 <= stop 480
+        self.assertIn("Stock: NABIL", stop[0]["text"])
+        self.assertIn("Your Average Cost", stop[0]["text"])
+        self.assertEqual(found[0]["kind"], "stop")                # most urgent first
+        with clean_env(TELEGRAM_BOT_TOKEN=FAKE_TOKEN):
+            sent, failed = alerts.filter_new(found, self.d, private=True)
+            self.assertGreaterEqual(len(sent), 1)
+            self.assertEqual(failed, [])
+            self.assertEqual(alerts.filter_new(found, self.d, private=True), ([], []))   # cooldown suppresses repeats
+        raw = (self.d / "state" / "alerts.json").read_text()
+        for marker in ("NABIL", "UPPER", "stop", "480"):
+            self.assertNotIn(marker, raw)                         # the public sent-state does not leak holdings
+
+    def test_failed_delivery_is_retried_not_lost(self):
+        found = self.found()
+        with clean_env(TELEGRAM_BOT_TOKEN=FAKE_TOKEN):
+            sent, failed = alerts.filter_new(found, self.d, private=True, deliver=lambda a: False)
+            self.assertEqual(sent, [])
+            self.assertGreaterEqual(len(failed), 1)
+            self.assertEqual(self.state()["sent"], {})            # nothing recorded as sent
+            sent, failed = alerts.filter_new(found, self.d, private=True, deliver=lambda a: True)
+            self.assertGreaterEqual(len(sent), 1)                 # so the next run sends it
+
+    def test_per_run_cap_counts_attempts(self):
+        found = self.found() * 10
+        with clean_env(TELEGRAM_BOT_TOKEN=FAKE_TOKEN):
+            sent, failed = alerts.filter_new(found, self.d, private=True, deliver=lambda a: False)
+        self.assertEqual(len(sent) + len(failed), alerts.CFG["maxAlertsPerRun"])
+
+    def test_private_state_is_not_written_without_a_secret(self):
+        found = self.found()
+        with clean_env():
+            sent, _ = alerts.filter_new(found, self.d, private=True)
+        self.assertGreaterEqual(len(sent), 1)
+        self.assertIsNone(self.state())                           # nothing safe to key the digests with
+
+    def test_passphrase_is_stretched_before_keying_public_digests(self):
+        import hashlib
+        import hmac
+        found = self.found()
+        with clean_env(PORTFOLIO_PASSPHRASE="correct horse battery staple"):
+            alerts.filter_new(found, self.d, private=True)
+        state = self.state()
+        self.assertGreaterEqual(alerts.KDF_ROUNDS, 100_000)
+        self.assertEqual(len(bytes.fromhex(state["salt"])), 16)   # random per-repository salt
+        fast = hmac.new(b"correct horse battery staple", found[0]["key"].encode(), hashlib.sha256).hexdigest()[:24]
+        self.assertNotIn(fast, state["sent"])                     # a plain HMAC would be a cheap guessing oracle
+
+    def test_stale_data_pauses_price_alerts(self):
+        found = self.found("stale")
+        self.assertEqual(len(found), 1)
+        self.assertIn("DATA WARNING", found[0]["text"])
+
+    def test_market_only_mode_without_portfolio(self):
+        write_market(self.d)
+        ctx = alerts.build_context(None, self.d)
+        self.assertEqual([a for a in alerts.generate(ctx) if a["kind"] == "stop"], [])
+
+
+class PublicLogTest(unittest.TestCase):
+    """GitHub Actions logs of a public repository are world-readable: no portfolio content may reach them."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.d = Path(self.tmp.name)
+        write_market(self.d)
+        run_pipeline.ERRORS.clear()
+
+    def tearDown(self):
+        self.tmp.cleanup()
+        run_pipeline.ERRORS.clear()
+
+    def captured(self, fn) -> str:
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+            fn()
+        return buf.getvalue()
+
+    def everything(self, dry: bool):
+        run_pipeline.do_alerts(self.d, dry)
+        for kind in ("premarket", "daily", "weekly", "monthly"):
+            run_pipeline.do_report(kind, self.d, dry)
+
+    def test_ci_log_never_contains_portfolio_content(self):
+        for dry in (True, False):
+            with self.subTest(dry_run=dry), clean_env(GITHUB_ACTIONS="true", PORTFOLIO_JSON=DEMO_TEXT):
+                out = self.captured(lambda: self.everything(dry))
+                for marker in PRIVATE_MARKERS:
+                    self.assertNotIn(marker, out)
+                self.assertIn("content hidden" if dry else "NOT delivered (Telegram not configured)", out)
+                self.assertIn("candidate", out)                   # counts and status are still logged
+        self.assertFalse((self.d / "state").exists())             # no secret configured -> no sent-state published
+
+    def test_local_dry_run_still_shows_everything(self):
+        with clean_env(PORTFOLIO_JSON=DEMO_TEXT):
+            out = self.captured(lambda: self.everything(True))
+        self.assertIn("Stock: NABIL", out)
+        self.assertIn("Your Average Cost", out)
+
+    def test_market_only_content_is_not_hidden_in_ci(self):
+        with clean_env(GITHUB_ACTIONS="true"):                    # no portfolio: everything is public market data
+            out = self.captured(lambda: run_pipeline.do_report("daily", self.d, True))
+        self.assertIn("NEPSE DAILY PORTFOLIO REPORT", out)
+        self.assertNotIn("hidden", out)
+
+    def test_error_messages_are_reduced_in_ci_for_private_stages(self):
+        def boom():
+            raise ValueError("holding NABIL at cost 484.68")
+        with clean_env(GITHUB_ACTIONS="true"):
+            out = self.captured(lambda: run_pipeline.step("alerts", boom, private=True))
+        self.assertIn("ValueError", out)
+        self.assertIn("FAILED", out)
+        for marker in ("NABIL", "484.68"):
+            self.assertNotIn(marker, out)
+        with clean_env(GITHUB_ACTIONS="true"):                    # public stages keep the full traceback
+            out = self.captured(lambda: run_pipeline.step("collect", boom))
+        self.assertIn("484.68", out)
+        self.assertEqual(run_pipeline.ERRORS, ["alerts", "collect"])
+
+    def test_failing_channel_fails_the_run_and_keeps_the_alert(self):
+        bad = {"sent": False, "reason": "Telegram API returned HTTP 401"}
+        with clean_env(TELEGRAM_BOT_TOKEN=FAKE_TOKEN, TELEGRAM_CHAT_ID="1", PORTFOLIO_JSON=DEMO_TEXT), \
+                mock.patch.object(telegram, "send_telegram", return_value=bad):
+            out = self.captured(lambda: run_pipeline.do_alerts(self.d, False))
+        self.assertIn("NOT delivered (Telegram API returned HTTP 401)", out)
+        self.assertIn("alert delivery", run_pipeline.ERRORS)
+        self.assertEqual(collect.read_json(self.d / "state" / "alerts.json")["sent"], {})
+
+    def test_unconfigured_telegram_is_not_an_error(self):
+        with clean_env():
+            self.captured(lambda: run_pipeline.do_alerts(self.d, False))
+        self.assertEqual(run_pipeline.ERRORS, [])
+
+
+if __name__ == "__main__":
+    unittest.main()

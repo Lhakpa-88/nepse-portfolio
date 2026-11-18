@@ -1,0 +1,7 @@
+{
+  "_note": "NEPSE trades Sunday-Thursday 11:00-15:00 Nepal time. Public holidays are announced by NEPSE during the year (many follow the lunar calendar) so they cannot be precomputed reliably. Add dates here (YYYY-MM-DD, Nepal time) as they are announced. The pipeline ALSO detects closures from data: if sources return no new trading date, the day is treated as closed and no stale-price alerts fire.",
+  "weekendDays": [4, 5],
+  "open": "11:00",
+  "close": "15:00",
+  "holidays": []
+}

@@ -1,0 +1,53 @@
+{
+  "_note": "Nepal secondary-market charges. Effective-date based: the schedule whose effectiveFrom is the latest date <= transaction date applies. VERIFY against your broker's contract note before relying on tax figures; edit here (or in Settings) when SEBON/NEPSE/Finance Act revise rates.",
+  "schedules": [
+    {
+      "effectiveFrom": "2000-01-01",
+      "label": "Pre Dec-2020 commission, flat 5% CGT (individual)",
+      "commissionSlabs": [
+        {"upTo": 50000, "rate": 0.004},
+        {"upTo": 500000, "rate": 0.0037},
+        {"upTo": 2000000, "rate": 0.0034},
+        {"upTo": 10000000, "rate": 0.003},
+        {"upTo": null, "rate": 0.0027}
+      ],
+      "minCommission": 10,
+      "sebonRate": 0.00015,
+      "dpCharge": 25,
+      "cgt": {"shortTermRate": 0.05, "longTermRate": 0.05, "longTermDays": 365},
+      "dividendTaxRate": 0.05
+    },
+    {
+      "effectiveFrom": "2020-12-27",
+      "label": "Reduced commission slabs (Dec 2020), flat 5% CGT (individual)",
+      "commissionSlabs": [
+        {"upTo": 50000, "rate": 0.0036},
+        {"upTo": 500000, "rate": 0.0033},
+        {"upTo": 2000000, "rate": 0.0031},
+        {"upTo": 10000000, "rate": 0.0027},
+        {"upTo": null, "rate": 0.0024}
+      ],
+      "minCommission": 10,
+      "sebonRate": 0.00015,
+      "dpCharge": 25,
+      "cgt": {"shortTermRate": 0.05, "longTermRate": 0.05, "longTermDays": 365},
+      "dividendTaxRate": 0.05
+    },
+    {
+      "effectiveFrom": "2021-07-16",
+      "label": "Current: Dec-2020 slabs, CGT 7.5% short-term / 5% long-term (individual)",
+      "commissionSlabs": [
+        {"upTo": 50000, "rate": 0.0036},
+        {"upTo": 500000, "rate": 0.0033},
+        {"upTo": 2000000, "rate": 0.0031},
+        {"upTo": 10000000, "rate": 0.0027},
+        {"upTo": null, "rate": 0.0024}
+      ],
+      "minCommission": 10,
+      "sebonRate": 0.00015,
+      "dpCharge": 25,
+      "cgt": {"shortTermRate": 0.075, "longTermRate": 0.05, "longTermDays": 365},
+      "dividendTaxRate": 0.05
+    }
+  ]
+}

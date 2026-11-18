@@ -1,0 +1,5 @@
+Date,Symbol,Company,Type,Quantity,Price,Commission,SEBON Fee,DP Charge,CGT or Tax,Other Charges,Broker,Notes
+2025-01-15,DEMO,DEMO row - delete before importing,Buy,100,500,,,,,,,Leave charge columns blank to auto-calculate
+2025-03-02,DEMO,DEMO row - delete before importing,Sell,40,560,,,,,,,Partial sale
+2025-06-20,DEMO,DEMO row - delete before importing,Bonus,6,0,,,,,,,10% bonus on 60 shares
+2025-06-20,DEMO,DEMO row - delete before importing,Dividend,60,5,,,,,,,5% cash dividend = Rs 5 per share

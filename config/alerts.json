@@ -1,0 +1,15 @@
+{
+  "_note": "Alert thresholds - tune to control notification volume. Per-stock target/stop-loss prices are set in the dashboard and travel inside the encrypted portfolio file.",
+  "dayMovePct": 5,
+  "positionLossPct": 15,
+  "portfolioDayLossPct": 3,
+  "concentrationPct": 30,
+  "sectorConcentrationPct": 50,
+  "unusualVolumeRatio": 3,
+  "supportBreachBufferPct": 1,
+  "cooldownDays": 3,
+  "maxAlertsPerRun": 8,
+  "notifyOpportunities": true,
+  "minOpportunityScore": 72,
+  "depositBenchmarkPct": 6
+}

@@ -1,0 +1,8 @@
+{
+  "_note": "Transparent scoring model. Weights must sum to 100. Edit here for the automated pipeline; the dashboard Settings page can override weights locally.",
+  "weights": {"fundamental": 35, "technical": 25, "valuation": 15, "market": 15, "risk": 10},
+  "thresholds": {"buy": 70, "accumulate": 60, "hold": 45, "reduce": 35},
+  "riskLevels": {"low": 35, "medium": 60},
+  "excludedSectors": ["Mutual Fund", "Non-Convertible Debenture"],
+  "tradingDaysPerYear": 230
+}

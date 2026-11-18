@@ -1,0 +1,18 @@
+{
+  "_note": "Data-source configuration layer. ALL of these are UNOFFICIAL public endpoints used by each site's own web pages; none is an official NEPSE API (nepalstock.com rejects anonymous API access with 401). They can change or disappear without notice; the pipeline falls back in the order below and reports health in status.json.",
+  "userAgent": "Mozilla/5.0 (compatible; personal-nepse-portfolio/1.0; non-commercial individual use)",
+  "minIntervalSeconds": 0.35,
+  "timeoutSeconds": 25,
+  "retries": 3,
+  "capabilities": {
+    "prices": ["sharehub", "nepalipaisa", "chukul"],
+    "indices": ["nepalipaisa", "sharehub"],
+    "history": ["chukul", "nepalipaisa"],
+    "fundamentals": ["sharehub"],
+    "dividends": ["sharehub"]
+  },
+  "fundamentalsRefreshDays": 7,
+  "maxFundamentalFetchesPerRun": 150,
+  "maxHistoryBootstrapsPerRun": 400,
+  "historyKeepDays": 520
+}

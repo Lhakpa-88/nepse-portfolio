@@ -1,0 +1,76 @@
+{
+  "_note": "DEMO data. Expected values were computed BY HAND (see docs/CALCULATIONS.md), independently of both engines. The Python engine (backend/portfolio.py) and the TypeScript engine (frontend/src/lib/engine.ts) must both reproduce them to within 0.01 NPR.",
+  "cases": [
+    {
+      "name": "A: two buys, partial sale (short-term), bonus, cash dividend - WACC",
+      "options": {"method": "WACC", "bonusCostBasis": 0, "bonusTaxBasis": 100},
+      "today": "2024-10-01",
+      "prices": {"DEMOA": 550},
+      "transactions": [
+        {"id": "a1", "date": "2024-01-10", "symbol": "DEMOA", "type": "BUY", "qty": 100, "price": 500},
+        {"id": "a2", "date": "2024-03-10", "symbol": "DEMOA", "type": "BUY", "qty": 50, "price": 560},
+        {"id": "a3", "date": "2024-06-10", "symbol": "DEMOA", "type": "SELL", "qty": 60, "price": 600},
+        {"id": "a4", "date": "2024-09-01", "symbol": "DEMOA", "type": "BONUS", "qty": 9, "price": 0},
+        {"id": "a5", "date": "2024-09-01", "symbol": "DEMOA", "type": "DIVIDEND", "qty": 90, "price": 5}
+      ],
+      "expected": {
+        "holdings": {
+          "DEMOA": {"qty": 99, "cost": 47005.5, "taxCost": 47905.5, "avgCost": 474.80303, "realized": 4163.4,
+                    "dividendGross": 450, "dividendTax": 22.5, "dividendNet": 427.5, "bonusQty": 9,
+                    "value": 54450, "unrealized": 7444.5}
+        },
+        "totals": {"cost": 47005.5, "value": 54450, "unrealized": 7444.5, "realized": 4163.4,
+                   "dividendNet": 427.5, "netReturn": 12035.4, "cgt": 339.6,
+                   "commission": 410.4, "sebon": 17.1, "dp": 75, "totalBuyCost": 78342.5}
+      }
+    },
+    {
+      "name": "B: FIFO, sale spanning a long-term lot and a short-term lot",
+      "options": {"method": "FIFO"},
+      "today": "2024-07-02",
+      "prices": {"DEMOB": 400},
+      "transactions": [
+        {"id": "b1", "date": "2023-01-01", "symbol": "DEMOB", "type": "BUY", "qty": 100, "price": 200},
+        {"id": "b2", "date": "2024-06-01", "symbol": "DEMOB", "type": "BUY", "qty": 100, "price": 300},
+        {"id": "b3", "date": "2024-07-01", "symbol": "DEMOB", "type": "SELL", "qty": 150, "price": 400}
+      ],
+      "expected": {
+        "holdings": {"DEMOB": {"qty": 50, "cost": 15068.75, "avgCost": 301.375, "realized": 23246.48}},
+        "totals": {"cgt": 1352.77, "realized": 23246.48, "value": 20000, "unrealized": 4931.25}
+      }
+    },
+    {
+      "name": "C: same trades as B under WACC (blended holding period)",
+      "options": {"method": "WACC"},
+      "today": "2024-07-02",
+      "prices": {"DEMOB": 400},
+      "transactions": [
+        {"id": "c1", "date": "2023-01-01", "symbol": "DEMOB", "type": "BUY", "qty": 100, "price": 200},
+        {"id": "c2", "date": "2024-06-01", "symbol": "DEMOB", "type": "BUY", "qty": 100, "price": 300},
+        {"id": "c3", "date": "2024-07-01", "symbol": "DEMOB", "type": "SELL", "qty": 150, "price": 400}
+      ],
+      "expected": {
+        "holdings": {"DEMOB": {"qty": 50, "cost": 12559.375, "avgCost": 251.1875, "realized": 20799.85}},
+        "totals": {"cgt": 1290.03}
+      }
+    },
+    {
+      "name": "D: IPO + right shares (no brokerage), loss-making full exit (no CGT), voided entry ignored, oversell rejected",
+      "options": {"method": "WACC"},
+      "today": "2025-03-01",
+      "prices": {},
+      "transactions": [
+        {"id": "d1", "date": "2024-02-01", "symbol": "DEMOD", "type": "IPO", "qty": 10, "price": 100},
+        {"id": "d2", "date": "2024-05-01", "symbol": "DEMOD", "type": "RIGHT", "qty": 10, "price": 100},
+        {"id": "d0", "date": "2024-05-02", "symbol": "DEMOD", "type": "BUY", "qty": 999, "price": 999, "voided": true},
+        {"id": "d3", "date": "2024-08-01", "symbol": "DEMOD", "type": "SELL", "qty": 20, "price": 90},
+        {"id": "d4", "date": "2024-08-02", "symbol": "DEMOD", "type": "SELL", "qty": 5, "price": 90}
+      ],
+      "expected": {
+        "holdings": {"DEMOD": {"qty": 0, "cost": 0, "realized": -235.27, "rightQty": 10}},
+        "totals": {"cgt": 0, "realized": -235.27, "commission": 10, "sebon": 0.27, "dp": 25},
+        "errorCount": 1
+      }
+    }
+  ]
+}
