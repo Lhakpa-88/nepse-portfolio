@@ -119,16 +119,21 @@ def do_alerts(out: Path, dry: bool):
             reasons.add(res["reason"] or "unknown")
         return res["delivered"]
 
-    sent, failed = alert_mod.filter_new(found, out, private, deliver)
+    counts: dict = {}
+    sent, failed = alert_mod.filter_new(found, out, private, deliver, counts)
+    waiting, repeats = counts.get("waiting", 0), counts.get("repeats", 0)
+    cap = alert_mod.CFG["maxAlertsPerRun"]
     print(f"[alerts] {len(found)} candidate(s), {len(sent)} delivered"
-          + (f", {len(failed)} NOT delivered ({'; '.join(sorted(reasons))}) - they will be retried" if failed else ""))
+          + (f", {len(failed)} NOT delivered ({'; '.join(sorted(reasons))}) - they will be retried" if failed else "")
+          + (f", {waiting} held for the next run (at most {cap} per run)" if waiting else ""))
     if any("not configured" not in r for r in reasons):
         ERRORS.append("alert delivery")       # a configured channel is failing: make the run visibly fail
     if (sent or failed) and secure_store.logs_are_public():
-        repeats = len(found) - len(sent) - len(failed)
+        # "waiting" and "sent recently" are different things to the reader: one is still to come, the other is not
         annotate("notice", "Alerts", f"{len(sent)} delivered"
                  + (f" and {len(failed)} could not be delivered ({'; '.join(sorted(reasons))})" if failed else "")
-                 + (f". {repeats} more were sent recently and are not repeated yet" if repeats > 0 else "") + ".")
+                 + (f". {waiting} more are waiting for the next run (at most {cap} per run)" if waiting else "")
+                 + (f". {repeats} were sent recently and are not repeated yet" if repeats else "") + ".")
     return ctx, sent
 
 

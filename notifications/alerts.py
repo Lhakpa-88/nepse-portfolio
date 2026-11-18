@@ -226,13 +226,16 @@ def _digester(state: dict, private: bool):
     return lambda key: hmac.new(derived, key.encode(), hashlib.sha256).hexdigest()[:24]
 
 
-def filter_new(alerts: list[dict], out: Path, private: bool = True, deliver=None) -> tuple[list[dict], list[dict]]:
+def filter_new(alerts: list[dict], out: Path, private: bool = True, deliver=None,
+               stats: dict | None = None) -> tuple[list[dict], list[dict]]:
     """Applies cooldown and the per-run cap, delivers, and records ONLY what was actually delivered.
 
     `private`  - the alerts were built from a portfolio (controls how the sent-state may be stored).
     `deliver`  - callable(alert) -> True when it reached the user. When omitted every selected alert counts as
                  delivered. An alert that fails to send is not recorded, so it is retried on the next run instead
                  of being silently lost.
+    `stats`    - when given, receives {"repeats": alerts skipped because they were sent recently,
+                 "waiting": new alerts held back by the per-run cap, which go out on the next runs}.
     Returns (delivered, undelivered).
     """
     path = out / "state" / "alerts.json"
@@ -242,13 +245,16 @@ def filter_new(alerts: list[dict], out: Path, private: bool = True, deliver=None
     state["sent"] = {k: v for k, v in state.get("sent", {}).items() if v >= (now - timedelta(days=45)).isoformat()}
     digest = _digester(state, private)
     delivered, undelivered = [], []
+    repeats = waiting = 0
     for a in alerts:
         d = digest(a["key"]) if digest else None
         news = a["kind"] in ("critical_news", "holding_news")
         if d and d in state["sent"] and (news or state["sent"][d] >= cutoff):
+            repeats += 1
             continue
         if len(delivered) + len(undelivered) >= CFG["maxAlertsPerRun"]:
-            break       # the rest are reconsidered on the next run
+            waiting += 1    # not sent and not recorded: reconsidered on the next run
+            continue
         if deliver is None or deliver(a):
             delivered.append(a)
             if d:
@@ -257,4 +263,6 @@ def filter_new(alerts: list[dict], out: Path, private: bool = True, deliver=None
             undelivered.append(a)
     if digest:
         write_json(path, state)
+    if stats is not None:
+        stats.update(repeats=repeats, waiting=waiting)
     return delivered, undelivered

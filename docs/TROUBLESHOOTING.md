@@ -43,6 +43,8 @@
 | No Telegram message | Run `test-telegram`. 401 = wrong token; 400 = wrong chat id or you never pressed Start in the bot chat |
 | Too many alerts | Raise thresholds or `cooldownDays`, lower `maxAlertsPerRun`, or set `notifyOpportunities` to false in `config/alerts.json` |
 | An alert did not repeat | Cooldown: the same condition is silent for `cooldownDays` |
+| Many alerts on the day the portfolio is first uploaded | Expected. The first run that sees your holdings reports every condition it finds: at most `maxAlertsPerRun` (8) per run, the rest on the following runs. The run page says how many were delivered, how many are still waiting and how many were sent recently. After that each condition is silent for `cooldownDays` |
+| I cannot find "Your portfolio was loaded" on the run page | It is under the heading *Annotations*, below the diagram on the page of the *Market pipeline and deploy* run. The *Tests* run that starts at the same time has the same title but no such note |
 
 Read a run: Actions → click the run → *pipeline* job → *Run pipeline* step. Each stage prints `start`, then `ok`
 or `FAILED` with a traceback.

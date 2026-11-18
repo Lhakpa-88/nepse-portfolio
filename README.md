@@ -75,7 +75,7 @@ npm run dev            # http://localhost:5173
 
 ```bash
 # tests
-python -m unittest discover -s tests -t . -v     # 59 tests
+python -m unittest discover -s tests -t . -v     # 63 tests
 cd frontend && npm test                          # 60 tests: calculations, encryption, every page and view rendered
 ```
 

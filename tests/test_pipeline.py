@@ -21,6 +21,20 @@ from scripts import run_pipeline
 
 ROOT = Path(__file__).resolve().parents[1]
 
+# The repository can hold the owner's real encrypted portfolio (data/private/portfolio.enc.json). No test may
+# depend on that file being there or not: unless a test supplies its own, the loader is pointed at a path that
+# does not exist. (The Tests workflow went red on the first real upload, because one test assumed "no file".)
+_NO_REAL_FILE = mock.patch.object(secure_store, "ENC_PATH",
+                                  Path(tempfile.gettempdir()) / "nepse-tests-no-such-folder" / "portfolio.enc.json")
+
+
+def setUpModule():
+    _NO_REAL_FILE.start()
+
+
+def tearDownModule():
+    _NO_REAL_FILE.stop()
+
 
 class TechnicalsTest(unittest.TestCase):
     def test_sma_and_insufficient_history(self):
@@ -223,9 +237,19 @@ class AlertTest(unittest.TestCase):
             self.assertGreaterEqual(len(sent), 1)
             self.assertEqual(failed, [])
             self.assertEqual(alerts.filter_new(found, self.d, private=True), ([], []))   # cooldown suppresses repeats
+        # The public sent-state must not leak holdings: it may hold nothing but keyed digests, their times and a
+        # salt. (Checked by its shape. Looking for "480" in the text failed about one run in twenty, whenever a
+        # random digest happened to contain those three characters.)
         raw = (self.d / "state" / "alerts.json").read_text()
-        for marker in ("NABIL", "UPPER", "stop", "480"):
-            self.assertNotIn(marker, raw)                         # the public sent-state does not leak holdings
+        state = json.loads(raw)
+        self.assertEqual(set(state), {"sent", "salt"})
+        self.assertRegex(state["salt"], r"^[0-9a-f]{32}$")
+        self.assertGreaterEqual(len(state["sent"]), 1)
+        for digest, when in state["sent"].items():
+            self.assertRegex(digest, r"^[0-9a-f]{24}$")
+            self.assertRegex(when, r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+00:00$")
+        for marker in ("NABIL", "UPPER", "stop"):
+            self.assertNotIn(marker, raw)                         # (none of these can occur in a hex digest)
 
     def test_failed_delivery_is_retried_not_lost(self):
         found = self.found()
@@ -242,6 +266,23 @@ class AlertTest(unittest.TestCase):
         with clean_env(TELEGRAM_BOT_TOKEN=FAKE_TOKEN):
             sent, failed = alerts.filter_new(found, self.d, private=True, deliver=lambda a: False)
         self.assertEqual(len(sent) + len(failed), alerts.CFG["maxAlertsPerRun"])
+
+    def many_distinct(self):
+        """More different alerts than one run may send."""
+        cap = alerts.CFG["maxAlertsPerRun"]
+        return cap, [dict(a, key=f"{a['key']}#{i}") for i in range(cap + 1) for a in self.found()]
+
+    def test_alerts_over_the_per_run_limit_wait_for_the_next_run_and_are_counted_as_waiting(self):
+        cap, many = self.many_distinct()
+        with clean_env(TELEGRAM_BOT_TOKEN=FAKE_TOKEN):
+            first, second = {}, {}
+            sent, failed = alerts.filter_new(many, self.d, private=True, stats=first)
+            self.assertEqual((len(sent), failed), (cap, []))
+            self.assertEqual(first, {"repeats": 0, "waiting": len(many) - cap})       # held back, not "already sent"
+            sent, _ = alerts.filter_new(many, self.d, private=True, stats=second)       # the next run takes the next ones
+            self.assertEqual(len(sent), min(cap, len(many) - cap))
+            self.assertEqual(second, {"repeats": cap, "waiting": max(0, len(many) - 2 * cap)})
+            self.assertFalse({a["key"] for a in sent} & {a["key"] for a in many[:cap]})  # and none of them twice
 
     def test_private_state_is_not_written_without_a_secret(self):
         found = self.found()
@@ -315,6 +356,41 @@ class PublicLogTest(unittest.TestCase):
         self.assertIn("could not be decrypted", out)
         for marker in PRIVATE_MARKERS + ("a wrong one", "the right passphrase"):
             self.assertNotIn(marker, out)
+
+    def test_the_tests_never_look_at_the_real_portfolio_file(self):
+        self.assertFalse(secure_store.ENC_PATH.exists())
+        self.assertNotIn(ROOT, secure_store.ENC_PATH.parents)              # not the repository's own data/private
+
+    def test_run_page_says_when_the_file_is_there_but_the_passphrase_secret_is_not(self):
+        try:
+            import cryptography  # noqa: F401
+        except ImportError:
+            self.skipTest("cryptography not installed")
+        path = self.d / "portfolio.enc.json"
+        path.write_text(json.dumps(secure_store.encrypt_blob(json.loads(DEMO_TEXT), "the right passphrase", 1000)))
+        with mock.patch.object(secure_store, "ENC_PATH", path), clean_env(GITHUB_ACTIONS="true"):
+            out = self.captured(lambda: run_pipeline.do_alerts(self.d, False))
+        self.assertIn("::warning title=Your portfolio was NOT loaded::", out)
+        self.assertIn("PORTFOLIO_PASSPHRASE secret is not set", out)
+        self.assertEqual(run_pipeline.ERRORS, [])                          # a reminder, not a failed run
+        for marker in PRIVATE_MARKERS:
+            self.assertNotIn(marker, out)
+
+    def test_run_page_tells_alerts_waiting_for_the_next_run_from_alerts_already_sent(self):
+        cap = alerts.CFG["maxAlertsPerRun"]
+        base = alerts.generate(alerts.build_context(json.loads(DEMO_TEXT), self.d))
+        many = [dict(a, key=f"{a['key']}#{i}") for i in range(cap + 1) for a in base]
+        with clean_env(GITHUB_ACTIONS="true", PORTFOLIO_JSON=DEMO_TEXT, **self.GMAIL), \
+                mock.patch.object(telegram.smtplib, "SMTP_SSL"), mock.patch.object(alerts, "generate", return_value=many):
+            first = self.captured(lambda: run_pipeline.do_alerts(self.d, False))
+            second = self.captured(lambda: run_pipeline.do_alerts(self.d, False))
+        self.assertIn(f"::notice title=Alerts::{cap} delivered. {len(many) - cap} more are waiting for the next run "
+                      f"(at most {cap} per run).", first)
+        self.assertNotIn("sent recently", first)                           # nothing had been sent before this run
+        self.assertIn(f"{cap} were sent recently and are not repeated yet.", second)
+        self.assertIn(f"{len(many) - cap} held for the next run", first)   # the log line says it too
+        for marker in PRIVATE_MARKERS:
+            self.assertNotIn(marker, first + second)
 
     def test_a_readable_file_where_the_encrypted_one_belongs_fails_the_run(self):
         """A plain backup uploaded by mistake is public. It must not pass as 'wrong passphrase' or go unnoticed."""

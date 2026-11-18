@@ -60,7 +60,7 @@ The push starts two workflows (repository → **Actions**):
 
 | Workflow | What it does | Duration |
 |----------|--------------|----------|
-| *Tests* | Runs the 59 Python tests and the 60 dashboard tests (calculations, encryption, and every page and view rendered with sample data), then a production build | 2–3 min |
+| *Tests* | Runs the 63 Python tests and the 60 dashboard tests (calculations, encryption, and every page and view rendered with sample data), then a production build | 2–3 min |
 | *Market pipeline and deploy* | Downloads prices, a year of history and fundamentals; analyses; collects news; publishes the site | 8–15 min the first time, 2–3 min afterwards |
 
 When *Market pipeline and deploy* is green, open the site:
@@ -125,8 +125,11 @@ Your transactions stay in your browser. For position-aware alerts the pipeline n
    Either way this starts a pipeline run. Without the card, the place is the folder `data/private/`:
    `https://github.com/<username>/nepse-portfolio/upload/main/data/private`.
 6. **Check**. The line at the bottom of step 3 changes to *GitHub has your encrypted file* (click **Check
-   again**). The run page (Actions tab) shows *"Your portfolio was loaded"*; if the passphrase does not match it
-   shows *"Your portfolio was NOT loaded"* with the reason.
+   again**). On GitHub, open the **Actions** tab and click the newest run whose small grey line begins with
+   *Market pipeline and deploy* (the upload also starts a *Tests* run with the same title, which says nothing
+   about the portfolio). On the run's page, **scroll down past the diagram to the heading _Annotations_**: it
+   lists *"Your portfolio was loaded"*, or *"Your portfolio was NOT loaded"* with the reason if the passphrase
+   does not match, and how many alerts were delivered.
 
 For immediate proof, run the workflow with the command `report daily`: the report that arrives lists your holdings.
 
