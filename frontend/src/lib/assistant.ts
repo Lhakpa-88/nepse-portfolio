@@ -96,7 +96,9 @@ function stockView(c: Ctx, sym: string, wantBuy: boolean): Answer {
   const h = c.pf.held.find((x) => x.symbol === sym);
   const lines: Line[] = [...stale(c)];
   if (!row) return { title: sym, engine: 'built-in', sources: dataSource(c), lines: [N(`${sym} has no price in the latest market data, so I cannot assess it. Nothing is assumed.`)] };
-  lines.push(F(`${sym} (${row.name ?? ''}, ${row.sector ?? 'sector unknown'}) last traded at Rs ${npr(row.ltp, 1)} (${pct(row.pctChange)} today).`));
+  lines.push(F(row.carried
+    ? `${sym} (${row.name ?? ''}, ${row.sector ?? 'sector unknown'}) has not traded yet in the latest session; its last close was Rs ${npr(row.ltp, 1)} on ${row.asOf}.`
+    : `${sym} (${row.name ?? ''}, ${row.sector ?? 'sector unknown'}) last traded at Rs ${npr(row.ltp, 1)} (${pct(row.pctChange)} today).`));
   if (!a) { lines.push(N('This instrument is priced but not analysed (mutual funds and debentures are excluded from scoring).')); return { title: sym, lines, sources: dataSource(c), engine: 'built-in' }; }
   const p = adviseProspect(a, c.state.settings.weights, c.m.analysis!.thresholds);
   const f = a.fundamentals;

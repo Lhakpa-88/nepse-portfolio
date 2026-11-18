@@ -14,5 +14,6 @@
   "fundamentalsRefreshDays": 7,
   "maxFundamentalFetchesPerRun": 150,
   "maxHistoryBootstrapsPerRun": 400,
-  "historyKeepDays": 520
+  "historyKeepDays": 520,
+  "carryForwardDays": 45
 }

@@ -56,7 +56,14 @@ Every run writes `status.json`, which the dashboard shows under Settings → *Ma
   then shows the **last available closing price with its date** and a red warning banner.
 * The browser re-checks freshness itself, so a cached status file cannot hide stale data.
 * Holdings whose symbol has no price are excluded from market value and reported separately, not estimated.
-* Price-based Telegram alerts pause automatically while data is stale.
+* Price-based alerts pause automatically while data is stale.
+* **During market hours the feeds list only stocks that have traded so far that day.** A stock with no trade yet
+  keeps its last real closing price, marked with the date it is from (the dashboard shows that date in brackets
+  next to the price). No bar is added to its history for a day without a trade, and it is dropped only after
+  `carryForwardDays` (45) without one.
+* **While a session is open, indicators and signals use completed sessions only.** Today's bar is still forming
+  (a fraction of a day's volume, a close that keeps moving), so it is left out until the market closes. The live
+  price is still used for valuation, entry zones, your profit and loss, and position alerts.
 
 ## Adding a licensed or official provider
 

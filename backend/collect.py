@@ -85,12 +85,43 @@ def collect_prices(out: Path, reg: Registry) -> dict | None:
     dates = Counter((r.get("asOf") or "")[:10] for r in rows if r.get("asOf"))
     market_date = max(dates) if dates else None
     as_of = max((r["asOf"] for r in rows if r.get("asOf")), default=None)
+    traded = len(rows)
+    carried = carry_forward(out, rows, companies, market_date)
     write_json(out / "companies.json", companies)
-    payload = {"marketDate": market_date, "asOf": as_of, "source": src, "fetchedAt": utcnow(), "rows": rows}
+    payload = {"marketDate": market_date, "asOf": as_of, "source": src, "fetchedAt": utcnow(),
+               "traded": traded, "carried": carried, "rows": rows}
     write_json(out / "prices.json", payload)
     reg.log["prices"]["crossCheck"] = cross
-    reg.log["prices"]["rows"] = len(rows)
+    reg.log["prices"]["rows"] = traded
+    reg.log["prices"]["carried"] = carried
     return payload
+
+
+def carry_forward(out: Path, rows: list[dict], companies: dict, market_date: str | None) -> int:
+    """Adds a row for every known symbol that has no trade yet in the current session, using its last real close.
+
+    Live feeds list only what has traded so far today. Without this, a holding would have no price until its
+    first trade of the day - or all day for a thinly traded stock. A carried row is a real past closing price,
+    marked `carried` with the date it is from; it is never an estimate, and it adds no bar to the price history.
+    Symbols idle for longer than `carryForwardDays` are left out rather than shown at a very old price.
+    """
+    if not market_date:
+        return 0
+    present = {r["symbol"] for r in rows}
+    oldest = (datetime.fromisoformat(market_date) - timedelta(days=CONFIG.get("carryForwardDays", 45))).date().isoformat()
+    added = 0
+    for sym, meta in sorted(companies.items()):
+        if sym in present:
+            continue
+        hist = read_json(out / "history" / f"{safe(sym)}.json") or {}
+        last = next((r for r in reversed(hist.get("rows", [])) if r[4] and str(r[0])[:10] < market_date), None)
+        if not last or str(last[0])[:10] < oldest:
+            continue
+        rows.append({"symbol": sym, "name": meta.get("name"), "sector": meta.get("sector"),
+                     "open": None, "high": None, "low": None, "ltp": last[4], "prevClose": last[4], "pctChange": None,
+                     "volume": 0, "turnover": 0, "transactions": 0, "asOf": str(last[0])[:10], "carried": True})
+        added += 1
+    return added
 
 
 def collect_indices(out: Path, reg: Registry, prices: dict | None) -> dict | None:
@@ -126,7 +157,7 @@ def update_history(out: Path, reg: Registry, prices: dict | None, market: dict |
     md, keep = prices["marketDate"], CONFIG.get("historyKeepDays", 520)
     budget = CONFIG.get("maxHistoryBootstrapsPerRun", 400)
     items = [(r["symbol"], [md, r.get("open"), r.get("high"), r.get("low"), r["ltp"], r.get("volume")])
-             for r in prices["rows"]]
+             for r in prices["rows"] if not r.get("carried")]        # no trade today -> no bar for today
     nepse = next((i for i in (market or {}).get("main", []) if i["name"] == "NEPSE Index"), None)
     if nepse and nepse.get("value"):
         items.append(("NEPSE", [md, None, nepse.get("high"), nepse.get("low"), nepse["value"],
@@ -146,7 +177,9 @@ def update_history(out: Path, reg: Registry, prices: dict | None, market: dict |
             except SourceError:
                 h = {"symbol": sym, "source": "daily-append", "rows": []}
                 stats["failed"] += 1
-        rows = h["rows"]
+        # one bar per calendar day, keyed by a plain date (a feed may stamp today's bar with a time of day)
+        by_day = {str(r[0])[:10]: [str(r[0])[:10], *r[1:]] for r in h["rows"] if r and r[0]}
+        rows = [by_day[d] for d in sorted(by_day)]
         if rows and rows[-1][0] == md:
             rows[-1] = today_row if sym != "NEPSE" or today_row[4] else rows[-1]
         elif not rows or rows[-1][0] < md:

@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { useOpenStock } from '../App';
 import { Badge, Banner, Card, DataTable, Field, Modal, Tabs, type Col } from '../components/ui';
-import { useMarket } from '../lib/data';
+import { shortDate, useMarket } from '../lib/data';
 import { scheduleFor, tradeCharges, type Holding, type Txn, type TxnType } from '../lib/engine';
 import { fmtTime, npr, pct, todayNPT, tone } from '../lib/format';
 import { downloadTemplate, exportXlsx, parseRows, readFile, txnKey, txnsToRows, type ParsedRow } from '../lib/importer';
@@ -62,7 +62,7 @@ function TxnForm({ initial, editId, onDone }: { initial?: Draft; editId?: string
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Field label="Date (AD)"><input type="date" className="input" value={d.date} max={todayNPT()} onChange={(e) => set('date', e.target.value)} /></Field>
         <Field label="Type"><select className="input" value={d.type} onChange={(e) => set('type', e.target.value)}>{TYPES.map((t) => <option key={t.v} value={t.v}>{t.label}</option>)}</select></Field>
-        <Field label="Symbol" hint={sym ? (row ? `${row.name ?? ''} · LTP Rs ${npr(row.ltp, 1)}` : 'Not in the current NEPSE price list') : undefined}>
+        <Field label="Symbol" hint={sym ? (row ? `${row.name ?? ''} · ${row.carried ? `last close Rs ${npr(row.ltp, 1)} (${shortDate(row.asOf)})` : `LTP Rs ${npr(row.ltp, 1)}`}` : 'Not in the NEPSE price list of the last 45 days: check the spelling') : undefined}>
           <input className="input uppercase" list="symbols" value={d.symbol} onChange={(e) => set('symbol', e.target.value)} placeholder="e.g. NABIL" />
           <datalist id="symbols">{(m.prices?.rows ?? []).map((r) => <option key={r.symbol} value={r.symbol}>{r.name}</option>)}</datalist>
         </Field>
@@ -142,6 +142,7 @@ function ImportDialog({ onClose }: { onClose: () => void }) {
 
 export default function Portfolio() {
   const { state, voidTxn, restoreTxn, setPlan } = useStore();
+  const m = useMarket();
   const pf = usePortfolio();
   const open = useOpenStock();
   const [tab, setTab] = useState<'holdings' | 'ledger' | 'closed' | 'audit'>('holdings');
@@ -155,7 +156,13 @@ export default function Portfolio() {
     { key: 'symbol', header: 'Symbol', sort: (h) => h.symbol, cell: (h) => <span><b>{h.symbol}</b> <span className="text-xs text-mute">{pf.sectorOf(h.symbol)}</span></span> },
     { key: 'qty', header: 'Shares', align: 'right', sort: (h) => h.qty, cell: (h) => npr(h.qty) },
     { key: 'avg', header: 'Avg cost', align: 'right', sort: (h) => h.avgCost, cell: (h) => npr(h.avgCost, 2) },
-    { key: 'ltp', header: 'LTP', align: 'right', sort: (h) => h.ltp, cell: (h) => (h.ltp ? npr(h.ltp, 1) : <span className="text-warn">no price</span>) },
+    { key: 'ltp', header: 'LTP', align: 'right', sort: (h) => h.ltp, cell: (h) => {
+      if (!h.ltp) return <span className="text-warn" title="No price in the market data for this symbol in the last 45 days. Check the symbol; it may be suspended, merged or delisted.">no price</span>;
+      const row = m.rowMap[h.symbol];
+      return row?.carried
+        ? <span title={`No trade yet in the latest session. This is the closing price of ${row.asOf}.`}>{npr(h.ltp, 1)} <span className="text-xs text-mute">({shortDate(row.asOf)})</span></span>
+        : npr(h.ltp, 1);
+    } },
     { key: 'cost', header: 'Cost', align: 'right', sort: (h) => h.cost, cell: (h) => npr(h.cost) },
     { key: 'value', header: 'Market value', align: 'right', sort: (h) => h.value, cell: (h) => npr(h.value) },
     { key: 'unreal', header: 'Unrealized P/L', align: 'right', sort: (h) => h.unrealized, cell: (h) => <span className={tone(h.unrealized)}>{npr(h.unrealized)} <span className="text-xs">({pct(h.unrealizedPct, 1)})</span></span> },

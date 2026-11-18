@@ -41,14 +41,15 @@ frontend/src/pages/*          the ten pages
 | File | Contents |
 |------|----------|
 | `status.json` | Source health, last success per dataset, freshness, reliability, session |
-| `prices.json` | Market date, as-of time, source, one row per symbol (OHLC, LTP, change, volume, turnover) |
+| `prices.json` | Market date, as-of time, source, one row per symbol (OHLC, LTP, change, volume, turnover). A symbol with no trade yet in the session carries its last real close, flagged `carried` with its date |
 | `market.json` | Main and sector indices, turnover, volume, transactions, breadth |
 | `history/<SYMBOL>.json` | Daily `[date, open, high, low, close, volume]`, up to 520 sessions; `NEPSE.json` for the index |
 | `fundamentals.json` | Per company: latest quarter (EPS, book value, ROE, ROA, NPL, CAR…), growth, 8-quarter trend, dividends |
 | `companies.json` | Symbol → name and sector cache |
 | `analysis.json` | Per stock: indicators, five area scores with components and notes, quality/trading/risk, signal, confidence, data gaps, levels, screens; market regime; sector table; top 10 |
 | `news.json` | Classified, de-duplicated items with source links |
-| `state/alerts.json` | HMAC digests of sent alerts for cooldown (not deployed to Pages) |
+| `state/alerts.json` | Keyed digests of sent alerts for cooldown (not deployed to Pages) |
+| `state/reports.json` | The date each report was last delivered, so a report is sent once per day whichever run gets there first |
 
 ## Private state (browser)
 

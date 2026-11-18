@@ -193,13 +193,14 @@ class Chukul:
             "symbol": x["symbol"], "name": None, "sector": None, "open": _f(x.get("open")), "high": _f(x.get("high")),
             "low": _f(x.get("low")), "ltp": _f(x.get("close")), "prevClose": _f(x.get("prev_close")),
             "pctChange": _f(x.get("percentage_change")), "volume": _f(x.get("volume")), "turnover": _f(x.get("amount")),
-            "transactions": None, "asOf": x.get("date"),
+            # during the session this feed reports "YYYY-MM-DD HH:MM:SS"; after the close just the date
+            "transactions": None, "asOf": str(x.get("date") or "").replace(" ", "T")[:19],
         } for x in d if x.get("symbol") and _f(x.get("close"))]
 
     def history(self, symbol: str):
         d = http_get(f"{self.base}/data/historydata/?symbol={urllib.parse.quote(symbol)}")
-        rows = [[x["date"], _f(x.get("open")), _f(x.get("high")), _f(x.get("low")), _f(x.get("close")),
-                 _f(x.get("volume"))] for x in d if _f(x.get("close"))]
+        rows = [[str(x["date"])[:10], _f(x.get("open")), _f(x.get("high")), _f(x.get("low")), _f(x.get("close")),
+                 _f(x.get("volume"))] for x in d if x.get("date") and _f(x.get("close"))]
         return sorted(rows)
 
 

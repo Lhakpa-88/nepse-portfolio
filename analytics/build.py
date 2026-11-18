@@ -5,6 +5,7 @@ import json
 from datetime import date, datetime, timezone
 from pathlib import Path
 
+from backend import market_calendar as cal
 from backend.collect import read_json, safe, write_json
 from . import scoring as sc
 from . import technicals as ta
@@ -73,11 +74,12 @@ def categorise(e: dict) -> list[str]:
     if (fd.get("epsGrowthYoY") or 0) >= 15 and (fd.get("roe") or 0) >= 10 and eps and eps > 0:
         cats.append("growth")
     liquid = (r["components"].get("liquidity") if r["components"].get("liquidity") is not None else 100) < 60
-    if t.get("breakout") and liquid:
+    live = not e.get("carried")         # short-term setups need a trade in the latest session, not an older bar
+    if t.get("breakout") and liquid and live:
         cats.append("breakout")
-    if e["trading"] is not None and e["trading"] >= 68 and liquid:
+    if e["trading"] is not None and e["trading"] >= 68 and liquid and live:
         cats.append("trading")
-    if (t.get("volRatio") or 0) >= 2.5:
+    if (t.get("volRatio") or 0) >= 2.5 and live:
         cats.append("volume")
     lv = e.get("levels")
     if lv and q is not None and q >= 58 and fs is not None and fs >= 55 and e["technical"]["outlook"] != "Bearish" \
@@ -88,7 +90,20 @@ def categorise(e: dict) -> list[str]:
     return cats
 
 
-def build(out: Path) -> dict:
+def completed_bars(rows: list[list], md: str | None, in_progress: bool) -> list[list]:
+    """Daily bars to compute indicators from.
+
+    While a session is open, today's bar is still forming: its volume is a fraction of a full day and its close
+    keeps moving. Indicators, scores and screens therefore use COMPLETED sessions only, so signals do not flip
+    or empty out during the day for reasons that are artefacts. The live price is still used for valuation,
+    entry-zone checks and position alerts.
+    """
+    if in_progress and rows and str(rows[-1][0])[:10] == md:
+        return rows[:-1]
+    return rows
+
+
+def build(out: Path, now=None) -> dict:
     prices = read_json(out / "prices.json")
     if not prices:
         raise SystemExit("analysis: prices.json missing - run collection first")
@@ -96,14 +111,19 @@ def build(out: Path) -> dict:
     fund_store = read_json(out / "fundamentals.json", {"symbols": {}})["symbols"]
     dpy = CFG["tradingDaysPerYear"]
     md = prices["marketDate"]
+    now = now or cal.now_npt()
+    in_progress = cal.session(now) == "open" and md == now.date().isoformat()
 
     techs, universe = {}, {}
     for r in prices["rows"]:
         if r.get("sector") in CFG["excludedSectors"]:
             continue
         h = read_json(out / "history" / f"{safe(r['symbol'])}.json", {"rows": []})
-        t = ta.analyse(h["rows"], dpy)
-        t["stale"] = t.get("lastDate") != md
+        t = ta.analyse(completed_bars(h["rows"], md, in_progress), dpy)
+        t["lastTrade"] = str(h["rows"][-1][0])[:10] if h["rows"] else None
+        # 0 = traded in the latest session, 1 = no trade yet in it (price is the previous close), 2+ = idle for days
+        t["idleSessions"] = cal.sessions_between(t["lastTrade"], md)
+        t["stale"] = t["idleSessions"] is None or t["idleSessions"] >= 2
         techs[r["symbol"]] = t
         f = fund_store.get(r["symbol"]) or {}
         eps, bv = f.get("eps"), f.get("bookValue")
@@ -113,7 +133,7 @@ def build(out: Path) -> dict:
     sstats = sc.sector_stats(universe)
 
     nepse_hist = read_json(out / "history" / "NEPSE.json", {"rows": []})
-    nepse_t = ta.analyse(nepse_hist["rows"], dpy)
+    nepse_t = ta.analyse(completed_bars(nepse_hist["rows"], md, in_progress), dpy)
     regime = sc.market_regime(nepse_t, market.get("breadth"))
     sector_today = {s["name"]: s.get("pctChange") for s in market.get("sectors", [])}
 
@@ -141,9 +161,13 @@ def build(out: Path) -> dict:
         gaps = list(st_reasons)
         conf = 100 * wcov * (0.5 + 0.5 * sc.mean([parts["fundamental"]["coverage"], parts["technical"]["coverage"],
                                                   parts["valuation"]["coverage"]]))
+        idle = t.get("idleSessions")
         if t.get("stale"):
             conf *= 0.7
-            gaps.append(f"Price history ends {t.get('lastDate')} (not traded in the latest session)")
+            gaps.append(f"No trade for {idle} sessions: the price is the {t.get('lastTrade')} close" if idle
+                        else "No price history for this symbol")
+        elif idle == 1:
+            gaps.append(f"No trade yet in the latest session: the price is the {t.get('lastTrade')} close")
         if f is None:
             gaps.append("Fundamentals missing")
         elif f.get("fetchedAt"):
@@ -156,6 +180,7 @@ def build(out: Path) -> dict:
 
         e = {
             "symbol": sym, "name": r.get("name"), "sector": sector, "price": r["ltp"], "pctChange": r.get("pctChange"),
+            "carried": bool(r.get("carried")), "lastTraded": t.get("lastTrade"),
             "quality": quality, "trading": trading, "confidence": sc.clamp(conf), "stance": st,
             "incomplete": f is None or parts["technical"]["score"] is None,
             "dataGaps": gaps,
@@ -192,6 +217,8 @@ def build(out: Path) -> dict:
                             "medianPB": ss["medianPB"], "medianROE": ss["medianROE"]})
     result = {
         "generatedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"), "marketDate": md,
+        # while a session is open, indicators and signals are built from completed sessions only
+        "sessionInProgress": in_progress, "indicatorsThrough": nepse_t.get("lastDate"),
         "weights": CFG["weights"], "thresholds": CFG["thresholds"], "riskLevels": CFG["riskLevels"],
         "regime": {**regime, "nepse": {k: nepse_t.get(k) for k in (
             "close", "sma20", "sma50", "sma200", "rsi14", "ret1w", "ret1m", "ret3m", "ret1y", "volatility",

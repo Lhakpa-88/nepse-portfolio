@@ -60,7 +60,7 @@ The push starts two workflows (repository → **Actions**):
 
 | Workflow | What it does | Duration |
 |----------|--------------|----------|
-| *Tests* | Runs the 48 Python and 12 TypeScript tests and a production build | 2–3 min |
+| *Tests* | Runs the 57 Python and 12 TypeScript tests and a production build | 2–3 min |
 | *Market pipeline and deploy* | Downloads prices, a year of history and fundamentals; analyses; collects news; publishes the site | 8–15 min the first time, 2–3 min afterwards |
 
 When *Market pipeline and deploy* is green, open the site:
@@ -147,15 +147,16 @@ Defined in `.github/workflows/pipeline.yml` in UTC (Nepal = UTC + 5:45):
 
 | Nepal time | Days | Job |
 |-----------|------|-----|
-| 10:30 | Sun–Thu | Pre-market brief: overnight announcements, levels to watch |
-| 11:00–15:00, every 30 min | Sun–Thu | Prices, analysis, price alerts |
-| 15:20 | Sun–Thu | Post-close update, fundamentals refresh, alerts |
-| 18:00 | Daily | Evening report; weekly review on Friday; monthly review on the 1st |
+| 09:55 and 10:30 | Sun–Thu | Morning brief: overnight announcements, levels to watch. Sent once, by whichever run starts first |
+| 11:00–15:00, every 30 min | Sun–Thu | Prices, position alerts. (Signals use completed sessions and update after the close) |
+| 15:00 and 15:20 | Sun–Thu | Post-close update, fundamentals refresh, signals, alerts |
+| 18:00 and 19:35 | Daily | Evening report, sent once; weekly review on Friday; monthly review on the 1st |
 
 Things to know about GitHub's scheduler:
 
-* Runs can start 5–20 minutes late at busy times. The pipeline decides what to do from the real Nepal clock, so a
-  late run still does the correct job.
+* Runs start late (commonly 10–30 minutes) and GitHub sometimes skips a slot. The pipeline decides what to do from
+  the real Nepal clock, and each report is tied to the day rather than to one trigger: if both morning triggers
+  are late, the first run after the open still sends the brief, and nothing is sent twice.
 * On a public repository GitHub **disables scheduled workflows after 60 days without repository activity**.
   The pipeline's data pushes normally count as activity; if schedules ever stop, open Actions and click
   *Enable workflow*.

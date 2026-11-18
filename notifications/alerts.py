@@ -71,6 +71,7 @@ def build_context(portfolio: dict | None, out: Path) -> dict:
             r = rows.get(h["symbol"])
             h["dayPct"] = r.get("pctChange") if r else None
             h["dayAmt"] = (r["ltp"] - r["prevClose"]) * h["qty"] if r and r.get("prevClose") else 0.0
+            h["lastTraded"] = r["asOf"][:10] if r and r.get("carried") else None     # no trade yet this session
         ctx["portfolio"] = {"result": res, "held": held, "plans": portfolio.get("plans", {}),
                             "watchlist": portfolio.get("watchlist", []),
                             "limit": settings.get("concentrationPct", CFG["concentrationPct"]),
@@ -98,7 +99,7 @@ def position_message(h: dict, a: dict | None, signal: str, headline: str, reason
     return "\n".join([
         "NEPSE PORTFOLIO ALERT", "",
         f"Stock: {h['symbol']}", "",
-        f"Current Price: NPR {n(h.get('ltp'), 1)}",
+        f"Current Price: NPR {n(h.get('ltp'), 1)}" + (f" (last traded {h['lastTraded']})" if h.get("lastTraded") else ""),
         f"Your Average Cost: NPR {n(h['avgCost'], 2)}",
         f"Unrealized Return: {h['unrealizedPct']:+.1f}%" if h.get("unrealizedPct") is not None else "Unrealized Return: n/a", "",
         f"Signal: {signal}", "",

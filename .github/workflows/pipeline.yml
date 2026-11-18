@@ -8,12 +8,16 @@ name: Market pipeline and deploy
 # PRIVACY: on a public repository this log is readable by anyone. The pipeline therefore never prints
 # anything built from the private portfolio here (not even in a dry run) - only counts and status.
 on:
+  # GitHub starts scheduled runs late (commonly 10-30 minutes) and sometimes skips a slot altogether. Reports are
+  # therefore sent once per day by whichever run gets there first, and the two report windows have a spare trigger.
   schedule:
-    - cron: '45 4 * * 0-4'        # 10:30 NPT  pre-market brief
+    - cron: '10 4 * * 0-4'        # 09:55 NPT  early trigger for the morning brief
+    - cron: '45 4 * * 0-4'        # 10:30 NPT  pre-market brief (spare)
     - cron: '15,45 5-8 * * 0-4'   # 11:00-14:30 NPT  every 30 min during trading
     - cron: '15 9 * * 0-4'        # 15:00 NPT  close
     - cron: '35 9 * * 0-4'        # 15:20 NPT  post-close update, P&L and alerts
     - cron: '15 12 * * *'         # 18:00 NPT  evening report (weekly on Friday, monthly on the 1st)
+    - cron: '50 13 * * *'         # 19:35 NPT  spare trigger for the evening report
   workflow_dispatch:
     inputs:
       command:

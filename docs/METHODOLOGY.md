@@ -70,7 +70,7 @@ The suggested action always states what selling would net after brokerage, SEBON
 ```
 confidence = 100 × (weight of areas with data ÷ total weight)
                  × (0.5 + 0.5 × average coverage of fundamental, technical and valuation components)
-           × 0.70 if the stock did not trade in the latest session
+           × 0.70 if the stock has not traded for two or more sessions
            × 0.85 if fundamentals were last refreshed more than 45 days ago
 ```
 
@@ -106,6 +106,17 @@ These are levels taken from past prices, not forecasts.
 BUY or ACCUMULATE signal. If fewer than ten qualify, fewer are shown.
 
 Mutual funds and debentures are priced but excluded from scoring.
+
+## During market hours
+
+* **Signals are end-of-day.** While a session is open, today's bar is incomplete (a fraction of a day's volume
+  and a close that keeps moving), so indicators, scores, signals and screens use completed sessions only. This
+  keeps recommendations from flipping during the day for reasons that are artefacts. They update after the close.
+* **Prices are live.** The latest price is still used for P/E and P/B, the entry-zone check, your profit and loss,
+  and the stop-loss, target and support alerts.
+* **A stock with no trade yet today** is shown at its last real closing price with that date. It stays in the
+  analysis with a note, but is left out of the three short-term screens (breakout, trading, unusual volume).
+  Confidence is reduced only when a stock has gone two or more sessions without a trade.
 
 ## Known limitations
 

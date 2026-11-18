@@ -23,8 +23,9 @@ scheduled **GitHub Actions** pipeline for data, analysis, news and **Telegram or
 | 9 | AI Investment Assistant | Answers questions from your live portfolio and market data; optional Claude for free-form questions |
 | 10 | Settings | Cost-basis method, fee/tax schedule, scoring weights, data-source health, encrypted sync, backup |
 
-Automation (GitHub Actions, Nepal time): pre-market brief 10:30 · every 30 minutes while the market is open ·
-post-close update 15:20 · evening report 18:00 · weekly review on Friday · monthly review on the 1st.
+Automation (GitHub Actions, Nepal time): morning brief before the open · every 30 minutes while the market is open ·
+post-close update 15:20 · evening report 18:00 · weekly review on Friday · monthly review on the 1st. GitHub starts
+scheduled runs late and sometimes skips one, so each report is sent once per day by whichever run gets there first.
 
 ## Architecture in one picture
 
@@ -73,7 +74,7 @@ npm run dev            # http://localhost:5173
 
 ```bash
 # tests
-python -m unittest discover -s tests -t . -v     # 48 tests
+python -m unittest discover -s tests -t . -v     # 57 tests
 cd frontend && npm test                          # 12 tests
 ```
 

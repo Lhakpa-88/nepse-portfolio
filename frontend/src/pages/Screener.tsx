@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useOpenStock } from '../App';
 import { Badge, Card, DataTable, Empty, ScoreBar, type Col } from '../components/ui';
-import { useMarket, type StockAnalysis } from '../lib/data';
+import { shortDate, useMarket, type StockAnalysis } from '../lib/data';
 import { compact, download, npr, num, pct, toCsv, todayNPT, tone } from '../lib/format';
 import { qualityWith, stanceOf } from '../lib/recommend';
 import { useStore } from '../lib/store';
@@ -59,7 +59,7 @@ export default function Screener() {
     <>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-lg font-semibold">Stock Screener</h1>
-        <span className="text-xs text-mute">{m.analysis.coverage.stocks} stocks analysed · {m.analysis.coverage.withFundamentals} with fundamentals · market date {m.analysis.marketDate}</span>
+        <span className="text-xs text-mute">{m.analysis.coverage.stocks} stocks analysed · {m.analysis.coverage.withFundamentals} with fundamentals · market date {m.analysis.marketDate}{m.analysis.sessionInProgress ? ` · market open: signals use closes through ${shortDate(m.analysis.indicatorsThrough)}` : ''}</span>
       </div>
       <Card>
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">

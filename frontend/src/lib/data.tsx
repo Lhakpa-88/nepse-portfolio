@@ -5,6 +5,8 @@ export interface PriceRow {
   symbol: string; name: string | null; sector: string | null; open: number | null; high: number | null;
   low: number | null; ltp: number; prevClose: number | null; pctChange: number | null; volume: number | null;
   turnover: number | null; transactions: number | null; asOf: string;
+  /** true = no trade yet in the latest session: `ltp` is the real closing price of the date in `asOf` */
+  carried?: boolean;
 }
 export interface IndexRow { name: string; value: number | null; prev: number | null; change: number | null; pctChange: number | null; high?: number | null; low?: number | null; turnover?: number | null }
 export interface Scored {
@@ -14,6 +16,7 @@ export interface Scored {
 export interface Levels { entryLow: number; entryHigh: number; upsideTarget: number | null; upsidePct: number | null; downsideLevel: number; downsidePct: number; stopLoss: number; basis: string }
 export interface StockAnalysis {
   symbol: string; name: string | null; sector: string | null; price: number; pctChange: number | null;
+  carried?: boolean; lastTraded?: string | null;
   quality: number | null; trading: number | null; confidence: number; stance: string; incomplete: boolean; dataGaps: string[];
   fundamental: Scored; technical: Scored; valuation: Scored; market: Scored; risk: Scored;
   tech: Record<string, any>; fundamentals: Record<string, any> | null; levels: Levels | null;
@@ -22,6 +25,8 @@ export interface StockAnalysis {
 export interface SectorPerf { sector: string; count: number; avgDayChange: number | null; avgRet1m: number | null; indexDayChange: number | null; medianPE: number | null; medianPB: number | null; medianROE: number | null }
 export interface Analysis {
   generatedAt: string; marketDate: string; weights: Record<string, number>; thresholds: Record<string, number>;
+  /** while a session is open, indicators and signals are built from completed sessions only (through this date) */
+  sessionInProgress?: boolean; indicatorsThrough?: string | null;
   regime: { score: number | null; label: string; components: Record<string, number>; nepse: Record<string, number | null> };
   sectorPerformance: SectorPerf[]; categories: Record<string, string>; top10: { symbol: string; rankScore: number }[];
   methodology: string; coverage: { stocks: number; withFundamentals: number; with200d: number };
@@ -37,7 +42,14 @@ export interface Status {
   freshness: { state: 'fresh' | 'delayed' | 'stale' | 'unavailable'; expected: string; lagTradingDays: number | null; message: string };
   capabilities: Record<string, any>; lastSuccess: Record<string, string>; chain: Record<string, string[]>;
 }
-export interface PricesFile { marketDate: string; asOf: string; source: string; fetchedAt: string; rows: PriceRow[] }
+export interface PricesFile { marketDate: string; asOf: string; source: string; fetchedAt: string; traded?: number; carried?: number; rows: PriceRow[] }
+
+/** "17 Nov" for a YYYY-MM-DD date. */
+export const shortDate = (iso?: string | null) => {
+  if (!iso) return '';
+  const d = new Date(`${iso.slice(0, 10)}T00:00:00Z`);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+};
 export interface MarketFile { main: IndexRow[]; sectors: IndexRow[]; summary: Record<string, number | null>; breadth?: { advancers: number; decliners: number; unchanged: number }; source: string }
 export interface NewsFile { generatedAt: string; items: NewsItem[]; sources: Record<string, any> }
 export interface Market {
@@ -130,7 +142,9 @@ export function staleness(m: Market): { level: 'ok' | 'warn' | 'bad'; text: stri
     return { level: 'bad', text: `The data pipeline has not run for ${Math.floor(ageH / 24)} days. Prices are from ${m.prices.marketDate} and are STALE.` };
   }
   if (f.state === 'fresh') {
-    return { level: 'ok', text: `Prices as of ${(m.prices.asOf ?? '').replace('T', ' ')} NPT (${m.status.session === 'open' ? 'market open, delayed snapshot' : 'latest close'})` };
+    const open = m.status.session === 'open' && m.analysis?.sessionInProgress !== false;
+    const idle = m.prices.carried ? `; ${m.prices.carried} not traded yet show their last close` : '';
+    return { level: 'ok', text: `Prices as of ${(m.prices.asOf ?? '').replace('T', ' ')} NPT (${open ? `market open, delayed snapshot${idle}` : 'latest close'})` };
   }
   return { level: f.state === 'delayed' ? 'warn' : 'bad', text: f.message };
 }

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useOpenStock } from '../App';
 import { Badge, Banner, Card, Empty, ScoreBar } from '../components/ui';
-import { useMarket, type StockAnalysis } from '../lib/data';
+import { shortDate, useMarket, type StockAnalysis } from '../lib/data';
 import { fmtTime, npr, num, pct, tone } from '../lib/format';
 import { adviseProspect } from '../lib/recommend';
 import { useStore } from '../lib/store';
@@ -80,7 +80,7 @@ export default function Opportunities() {
     <>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-lg font-semibold">Investment Opportunities</h1>
-        <span className="text-xs text-mute">Generated {fmtTime(an.generatedAt)} · market trend: {an.regime.label}</span>
+        <span className="text-xs text-mute">Generated {fmtTime(an.generatedAt)} · market trend: {an.regime.label}{an.sessionInProgress ? ` · market open: signals use closes through ${shortDate(an.indicatorsThrough)}, prices are today's` : ''}</span>
       </div>
       <div className="flex flex-wrap gap-1.5">
         <button onClick={() => setCat('top10')} className={`rounded-md border px-3 py-1.5 text-sm ${cat === 'top10' ? 'border-accent bg-accent/15 text-accent' : 'border-line text-mute hover:text-ink'}`}>Top 10 ranked</button>

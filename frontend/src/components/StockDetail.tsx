@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Area, Bar, CartesianGrid, ComposedChart, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { loadHistory, useMarket, type HistRow, type Scored } from '../lib/data';
+import { loadHistory, shortDate, useMarket, type HistRow, type Scored } from '../lib/data';
 import { fmtTime, npr, num, pct, tone } from '../lib/format';
 import { adviseProspect } from '../lib/recommend';
 import { useStore } from '../lib/store';
@@ -69,7 +69,9 @@ export function StockDetail({ symbol, onClose }: { symbol: string; onClose: () =
           <div className="flex flex-wrap items-end gap-x-6 gap-y-2">
             <div>
               <div className="num text-3xl font-semibold">Rs {npr(row.ltp, 1)}</div>
-              <div className={`num text-sm ${tone(row.pctChange)}`}>{pct(row.pctChange)} today · prev close {npr(row.prevClose, 1)}</div>
+              {row.carried
+                ? <div className="text-sm text-warn">No trade yet in the latest session · this is the {shortDate(row.asOf)} close</div>
+                : <div className={`num text-sm ${tone(row.pctChange)}`}>{pct(row.pctChange)} today · prev close {npr(row.prevClose, 1)}</div>}
             </div>
             {a && (
               <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -135,7 +137,7 @@ export function StockDetail({ symbol, onClose }: { symbol: string; onClose: () =
           {a && (
             <>
               <div className="grid gap-4 lg:grid-cols-2">
-                <Card title="Technical indicators">
+                <Card title={`Technical indicators${m.analysis?.sessionInProgress && t.lastDate ? ` · through the ${shortDate(t.lastDate)} close` : ''}`}>
                   <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
                     {[
                       ['RSI (14)', num(t.rsi14, 1)], ['MACD / signal', t.macd ? `${num(t.macd.macd)} / ${num(t.macd.signal)}` : '—'],

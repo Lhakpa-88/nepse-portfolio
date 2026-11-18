@@ -47,6 +47,19 @@ def last_expected_trading_date(now: datetime | None = None) -> date:
     return d
 
 
+def sessions_between(earlier: str | None, later: str | None) -> int | None:
+    """Trading sessions after `earlier` up to and including `later` (0 when they are the same day)."""
+    if not earlier or not later:
+        return None
+    a, b = date.fromisoformat(earlier[:10]), date.fromisoformat(later[:10])
+    n = 0
+    while b > a and n < 400:
+        if is_trading_day(b):
+            n += 1
+        b -= timedelta(days=1)
+    return n
+
+
 def freshness(market_date: str | None, now: datetime | None = None) -> dict:
     """Classifies how current the market data is. Never silently trusts stale data."""
     now = now or now_npt()

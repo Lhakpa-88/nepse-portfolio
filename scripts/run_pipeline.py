@@ -134,7 +134,7 @@ def do_report(kind: str, out: Path, dry: bool, sent=None):
         text += "\n\nAI summary (from the figures above): " + summary
     if dry:
         print(secure_store.loggable(text, private))
-        return
+        return False
     res = telegram.notify(text, subject=f"NEPSE {kind} report", email=kind in ("weekly", "monthly"), private=private)
     print(f"[{kind} report] " + ("delivered" if res["delivered"] else f"NOT delivered ({res['reason']})"))
     if not res["delivered"] and "not configured" not in (res["reason"] or ""):
@@ -142,6 +142,20 @@ def do_report(kind: str, out: Path, dry: bool, sent=None):
     if res["delivered"] and secure_store.logs_are_public():
         annotate("notice", f"The {kind} report was delivered",
                  "It includes your holdings." if private else "It is a market-only report because no portfolio was loaded.")
+    return res["delivered"]
+
+
+def scheduled_report(kind: str, out: Path, dry: bool, day: str, sent=None) -> None:
+    """Sends a report at most once per `day`, on whichever run gets there first (state/reports.json remembers)."""
+    path = out / "state" / "reports.json"
+    state = collect.read_json(path, {})
+    if state.get(kind) == day:
+        print(f"[{kind} report] already sent for {day} - not repeated")
+        return
+    delivered = step(f"{kind} report", lambda: do_report(kind, out, dry, sent), private=True)
+    if delivered and not dry:
+        state[kind] = day
+        collect.write_json(path, state)
 
 
 def annotate(level: str, title: str, message: str) -> None:
@@ -203,31 +217,36 @@ def auto(out: Path, dry: bool):
     sess = cal.session(now)
     hm = now.hour * 60 + now.minute
     print(f"[auto] Nepal time {now:%Y-%m-%d %H:%M} | session {sess}")
-    evening = hm >= 17 * 60
+    today = now.date().isoformat()
+    morning, evening = hm < 13 * 60, hm >= 17 * 60
+    res = None
     if sess == "pre":
         step("news", lambda: news_mod.run(out))
         step("collect", lambda: collect.run(out, with_fundamentals=False))
-        step("premarket report", lambda: do_report("premarket", out, dry), private=True)
     elif sess == "open":
         step("collect", lambda: collect.run(out, with_fundamentals=False))
         step("analyze", lambda: analysis.build(out))
         step("news", lambda: news_mod.run(out))
-        step("alerts", lambda: do_alerts(out, dry), private=True)
+        res = step("alerts", lambda: do_alerts(out, dry), private=True)
     elif sess == "post":
         step("collect", lambda: collect.run(out, with_fundamentals=True))
         step("analyze", lambda: analysis.build(out))
         step("news", lambda: news_mod.run(out))
         res = step("alerts", lambda: do_alerts(out, dry), private=True)
-        if evening:
-            step("daily report", lambda: do_report("daily", out, dry, res[1] if res else None), private=True)
     else:   # market closed (Friday / Saturday / holiday)
         step("news", lambda: news_mod.run(out))
         step("collect", lambda: collect.run(out, with_fundamentals=True))
         step("analyze", lambda: analysis.build(out))
+    # Reports are tied to the day, not to one trigger: GitHub starts scheduled runs late and sometimes skips a slot,
+    # so each report goes out on the first suitable run and is then not repeated.
+    if sess in ("pre", "open") and morning:
+        scheduled_report("premarket", out, dry, today)
+    if sess == "post" and evening:
+        scheduled_report("daily", out, dry, today, res[1] if res else None)
     if evening and now.weekday() == 4:                 # Friday evening
-        step("weekly report", lambda: do_report("weekly", out, dry), private=True)
+        scheduled_report("weekly", out, dry, today)
     if evening and now.day == 1:
-        step("monthly report", lambda: do_report("monthly", out, dry), private=True)
+        scheduled_report("monthly", out, dry, today)
 
 
 def main() -> int:

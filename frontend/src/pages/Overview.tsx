@@ -53,6 +53,7 @@ export default function Overview() {
   const sectors = (m.market?.sectors ?? []).filter((s) => s.pctChange !== null).map((s) => ({ name: s.name, pct: s.pctChange as number })).sort((a, b) => b.pct - a.pct);
   const sum = m.market?.summary ?? {};
   const regime = m.analysis?.regime;
+  const idle = pf.held.filter((h) => m.rowMap[h.symbol]?.carried).map((h) => h.symbol);
 
   const loadDemo = () => setState((s) => ({ ...s, demo: true, transactions: DEMO_TXNS.map((x) => ({ ...x, id: uid(), createdAt: new Date().toISOString() })), watchlist: DEMO_WATCH, plans: DEMO_PLANS,
     audit: [...s.audit, { at: new Date().toISOString(), action: 'DEMO', detail: 'DEMO sample portfolio loaded' }] }));
@@ -64,7 +65,8 @@ export default function Overview() {
   return (
     <>
       {pf.errors.length > 0 && <Banner level="bad"><b>{pf.errors.length} transaction(s) could not be applied</b> and are excluded from all figures: {pf.errors.slice(0, 3).map((e) => `${e.symbol} ${e.date}: ${e.message}`).join(' · ')}. Fix them in <Link className="underline" to="/portfolio">My Portfolio</Link>.</Banner>}
-      {t.unpricedCost > 0 && <Banner level="warn">Holdings costing Rs {npr(t.unpricedCost)} have no current market price and are excluded from market value and unrealized P/L (not estimated).</Banner>}
+      {t.unpricedCost > 0 && <Banner level="warn">Holdings costing Rs {npr(t.unpricedCost)} have no market price in the last 45 days and are excluded from market value and unrealized P/L (not estimated).</Banner>}
+      {idle.length > 0 && <Banner level="info">{idle.length === 1 ? '1 of your holdings has' : `${idle.length} of your holdings have`} not traded yet in the latest session ({idle.join(', ')}) and {idle.length === 1 ? 'is' : 'are'} valued at the last closing price.</Banner>}
 
       {allSymbols.length === 0 ? (
         <Card title="Welcome — your portfolio is empty">

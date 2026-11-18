@@ -12,6 +12,7 @@ from pathlib import Path
 from unittest import mock
 
 from ai_engine import news
+from analytics import build
 from analytics import scoring as sc
 from analytics import technicals as ta
 from backend import collect, market_calendar as cal, secure_store, sources
@@ -550,6 +551,153 @@ class TelegramSetupTest(unittest.TestCase):
                     portfolio, why = secure_store.load_portfolio()
                     self.assertIsNone(portfolio)
                     self.assertIn("could not be decrypted", why)
+
+
+def bar(day, close, volume=1000.0):
+    return [day, close, close * 1.01, close * 0.99, close, volume]
+
+
+class IntradayDataTest(unittest.TestCase):
+    """Live feeds list only what has traded so far today, and today's bar is incomplete until the close."""
+
+    TODAY = "2026-11-18"          # a Wednesday
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.d = Path(self.tmp.name)
+        self.companies = {s: {"name": f"{s} Limited", "sector": "Hydro Power"} for s in ("IDLE", "LIVE", "NEW", "GONE")}
+        collect.write_json(self.d / "history" / "IDLE.json", {"rows": [bar("2026-11-16", 98.0), bar("2026-11-17", 100.0)]})
+        collect.write_json(self.d / "history" / "LIVE.json", {"rows": [bar("2026-11-17", 50.0), bar("2026-11-18 11:27:03", 51.0)]})
+        collect.write_json(self.d / "history" / "GONE.json", {"rows": [bar("2026-08-01", 70.0)]})       # idle far too long
+        self.rows = [{"symbol": "LIVE", "name": None, "sector": None, "open": 50.0, "high": 52.0, "low": 50.0, "ltp": 52.0,
+                      "prevClose": 50.0, "pctChange": 4.0, "volume": 300.0, "turnover": 15600.0, "transactions": 9,
+                      "asOf": "2026-11-18T11:30:00"}]
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_stock_without_a_trade_today_keeps_its_last_real_close(self):
+        added = collect.carry_forward(self.d, self.rows, self.companies, self.TODAY)
+        by = {r["symbol"]: r for r in self.rows}
+        self.assertEqual(added, 1)
+        self.assertEqual(sorted(by), ["IDLE", "LIVE"])                 # NEW has no history, GONE is older than the limit
+        idle = by["IDLE"]
+        self.assertEqual((idle["ltp"], idle["prevClose"], idle["asOf"], idle["carried"]), (100.0, 100.0, "2026-11-17", True))
+        self.assertIsNone(idle["pctChange"])                           # no change is claimed for a day without a trade
+        self.assertEqual(idle["volume"], 0)
+        self.assertNotIn("carried", by["LIVE"])
+        self.assertEqual(collect.carry_forward(self.d, [], self.companies, None), 0)
+
+    def test_no_bar_is_invented_and_bars_are_keyed_by_plain_dates(self):
+        collect.carry_forward(self.d, self.rows, self.companies, self.TODAY)
+        collect.update_history(self.d, sources.Registry(), {"marketDate": self.TODAY, "rows": self.rows}, None)
+        idle = collect.read_json(self.d / "history" / "IDLE.json")["rows"]
+        live = collect.read_json(self.d / "history" / "LIVE.json")["rows"]
+        self.assertEqual([r[0] for r in idle], ["2026-11-16", "2026-11-17"])       # untouched: it did not trade today
+        self.assertEqual([r[0] for r in live], ["2026-11-17", "2026-11-18"])       # one bar per day, time of day dropped
+        self.assertEqual(live[-1][4], 52.0)                                         # today's bar follows the latest price
+
+    def test_sessions_between(self):
+        self.assertEqual(cal.sessions_between("2026-11-18", "2026-11-18"), 0)
+        self.assertEqual(cal.sessions_between("2026-11-17", "2026-11-18"), 1)
+        self.assertEqual(cal.sessions_between("2026-11-12", "2026-11-15"), 1)      # Thu -> Sun: Fri and Sat are closed
+        self.assertEqual(cal.sessions_between("2026-11-10", "2026-11-18"), 6)
+        self.assertIsNone(cal.sessions_between(None, "2026-11-18"))
+
+    def test_indicators_ignore_the_unfinished_bar_while_the_session_is_open(self):
+        rows = [bar("2026-11-17", 100.0), bar(self.TODAY, 103.0, 12.0)]
+        self.assertEqual(build.completed_bars(rows, self.TODAY, True), rows[:1])
+        self.assertEqual(build.completed_bars(rows, self.TODAY, False), rows)          # after the close it counts
+        self.assertEqual(build.completed_bars(rows[:1], self.TODAY, True), rows[:1])   # nothing traded today: keep all
+
+    def test_analysis_during_and_after_the_session(self):
+        days = [f"2026-{m:02d}-{d:02d}" for m in (9, 10, 11) for d in range(1, 29)]
+        days = [x for x in days if cal.is_trading_day(datetime.fromisoformat(x).date()) and x < self.TODAY][-45:]
+        hist = [bar(x, 100.0 + i * 0.5, 1000.0) for i, x in enumerate(days)]
+        last_close = hist[-1][4]
+        collect.write_json(self.d / "history" / "LIVE.json", {"rows": hist + [bar(self.TODAY, last_close + 1, 40.0)]})   # 4% of a day
+        collect.write_json(self.d / "history" / "IDLE.json", {"rows": hist})
+        collect.write_json(self.d / "history" / "NEPSE.json", {"rows": hist + [bar(self.TODAY, last_close + 1)]})
+        prices = {"marketDate": self.TODAY, "asOf": f"{self.TODAY}T11:30:00", "rows": [
+            {"symbol": "LIVE", "name": "Live", "sector": "Hydro Power", "ltp": last_close + 1, "prevClose": last_close, "pctChange": 0.8},
+            {"symbol": "IDLE", "name": "Idle", "sector": "Hydro Power", "ltp": last_close, "prevClose": last_close,
+             "pctChange": None, "asOf": days[-1], "carried": True}]}
+        collect.write_json(self.d / "prices.json", prices)
+        collect.write_json(self.d / "market.json", {"sectors": [], "breadth": {"advancers": 1, "decliners": 0}})
+        collect.write_json(self.d / "fundamentals.json", {"symbols": {}})
+
+        during = build.build(self.d, now=datetime.fromisoformat(f"{self.TODAY}T12:00").replace(tzinfo=cal.NPT))
+        self.assertTrue(during["sessionInProgress"])
+        self.assertEqual(during["indicatorsThrough"], days[-1])
+        live, idle = during["stocks"]["LIVE"], during["stocks"]["IDLE"]
+        self.assertEqual(live["tech"]["lastDate"], days[-1])            # indicators stop at the last completed session
+        self.assertEqual(live["tech"]["volRatio"], 1.0)                 # not dragged down by 30 minutes of volume
+        self.assertEqual(live["price"], last_close + 1)                 # ...while the price is today's
+        self.assertEqual((live["carried"], live["lastTraded"]), (False, self.TODAY))
+        self.assertEqual((idle["carried"], idle["lastTraded"]), (True, days[-1]))
+        self.assertTrue(any("No trade yet in the latest session" in g for g in idle["dataGaps"]))
+        self.assertFalse(any("No trade" in g for g in live["dataGaps"]))
+
+        after = build.build(self.d, now=datetime.fromisoformat(f"{self.TODAY}T16:00").replace(tzinfo=cal.NPT))
+        self.assertFalse(after["sessionInProgress"])
+        self.assertEqual(after["stocks"]["LIVE"]["tech"]["lastDate"], self.TODAY)      # the finished bar now counts
+        self.assertLess(after["stocks"]["LIVE"]["tech"]["volRatio"], 0.1)
+
+
+class ScheduleRobustnessTest(unittest.TestCase):
+    """GitHub starts scheduled runs late and sometimes skips a slot: reports must still go out once, and only once."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.d = Path(self.tmp.name)
+        run_pipeline.ERRORS.clear()
+
+    def tearDown(self):
+        self.tmp.cleanup()
+        run_pipeline.ERRORS.clear()
+
+    def reports_for(self, when: str, delivered=True, dry=False):
+        """Runs `auto` at a given Nepal time with every stage stubbed out; returns the reports it tried to send."""
+        tried = []
+
+        def fake_report(kind, out, dry_, sent=None):
+            tried.append(kind)
+            return delivered and not dry_
+        now = datetime.fromisoformat(when).replace(tzinfo=cal.NPT)
+        with mock.patch.object(cal, "now_npt", return_value=now), mock.patch.object(collect, "run"), \
+                mock.patch.object(build, "build"), mock.patch.object(news, "run"), \
+                mock.patch.object(run_pipeline, "do_alerts", return_value=({}, [])), \
+                mock.patch.object(run_pipeline, "do_report", side_effect=fake_report), \
+                contextlib.redirect_stdout(io.StringIO()):
+            run_pipeline.auto(self.d, dry)
+        return tried
+
+    def test_each_report_goes_out_on_the_first_suitable_run_and_is_not_repeated(self):
+        self.assertEqual(self.reports_for("2026-11-18T09:58"), ["premarket"])      # early trigger, before the open
+        self.assertEqual(self.reports_for("2026-11-18T10:40"), [])                 # spare trigger: already sent
+        self.assertEqual(self.reports_for("2026-11-18T12:00"), [])
+        self.assertEqual(self.reports_for("2026-11-18T15:25"), [])                 # after the close but not evening yet
+        self.assertEqual(self.reports_for("2026-11-18T18:20"), ["daily"])
+        self.assertEqual(self.reports_for("2026-11-18T19:40"), [])                 # spare evening trigger
+        self.assertEqual(collect.read_json(self.d / "state" / "reports.json"), {"premarket": "2026-11-18", "daily": "2026-11-18"})
+
+    def test_a_late_first_run_still_sends_the_morning_brief(self):
+        self.assertEqual(self.reports_for("2026-11-18T11:26"), ["premarket"])      # what actually happened on day one
+        self.assertEqual(self.reports_for("2026-11-18T11:56"), [])
+        self.assertEqual(self.reports_for("2026-11-19T14:10"), [])                 # too late in the day to call it a morning brief
+
+    def test_an_undelivered_or_dry_run_report_is_tried_again(self):
+        self.assertEqual(self.reports_for("2026-11-18T18:05", delivered=False), ["daily"])
+        self.assertEqual(self.reports_for("2026-11-18T18:10", dry=True), ["daily"])
+        self.assertEqual(self.reports_for("2026-11-18T19:40"), ["daily"])
+        self.assertEqual(self.reports_for("2026-11-18T19:50"), [])
+
+    def test_weekly_and_monthly_and_closed_days(self):
+        self.assertEqual(self.reports_for("2026-11-20T18:20"), ["weekly"])         # Friday evening: no daily report
+        self.assertEqual(self.reports_for("2026-11-20T19:40"), [])
+        self.assertEqual(self.reports_for("2026-11-21T18:20"), [])                 # Saturday
+        self.assertEqual(self.reports_for("2026-12-01T18:20"), ["daily", "monthly"])   # Tuesday the 1st
+        self.assertEqual(self.reports_for("2026-11-22T11:10"), ["premarket"])      # Sunday is a trading day
 
 
 if __name__ == "__main__":
