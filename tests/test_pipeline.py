@@ -6,6 +6,7 @@ import json
 import os
 import tempfile
 import unittest
+import urllib.error
 from datetime import datetime
 from pathlib import Path
 from unittest import mock
@@ -287,7 +288,7 @@ class PublicLogTest(unittest.TestCase):
                 out = self.captured(lambda: self.everything(dry))
                 for marker in PRIVATE_MARKERS:
                     self.assertNotIn(marker, out)
-                self.assertIn("content hidden" if dry else "NOT delivered (Telegram not configured)", out)
+                self.assertIn("content hidden" if dry else "NOT delivered (notifications not configured)", out)
                 self.assertIn("candidate", out)                   # counts and status are still logged
         self.assertFalse((self.d / "state").exists())             # no secret configured -> no sent-state published
 
@@ -330,6 +331,172 @@ class PublicLogTest(unittest.TestCase):
         with clean_env():
             self.captured(lambda: run_pipeline.do_alerts(self.d, False))
         self.assertEqual(run_pipeline.ERRORS, [])
+
+
+class TelegramSetupTest(unittest.TestCase):
+    """Setup must survive sloppy pasting, explain failures, and never log a token or a chat id."""
+
+    UPDATES = [
+        {"update_id": 1, "message": {"chat": {"id": 111222333, "type": "private"}, "text": "/start"}},
+        {"update_id": 2, "message": {"chat": {"id": -100555666, "type": "group"}, "text": "hi"}},
+        {"update_id": 3, "message": {"chat": {"id": 111222333, "type": "private"}, "text": "hello"}},
+        {"update_id": 4, "my_chat_member": {"chat": {"id": 444555666, "type": "private"}}},
+    ]
+
+    def fake_api(self, updates, send=(True, {})):
+        calls = []
+
+        def call(token, method, payload, attempts=3):
+            calls.append((method, payload))
+            return (True, updates) if method == "getUpdates" else send
+        return calls, call
+
+    def captured(self, fn):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+            code = fn()
+        return code, buf.getvalue()
+
+    def test_pasted_values_are_stripped_and_checked(self):
+        with clean_env(TELEGRAM_BOT_TOKEN=f"  {FAKE_TOKEN}\n", TELEGRAM_CHAT_ID=" 123456789\r\n"):
+            self.assertEqual(telegram.credentials(), (FAKE_TOKEN, "123456789"))
+        self.assertIsNone(telegram.problem_with(FAKE_TOKEN, "123456789"))
+        self.assertIsNone(telegram.problem_with(FAKE_TOKEN, "-1001234567890"))          # group chat
+        self.assertIn("does not look like a bot token", telegram.problem_with("bot" + FAKE_TOKEN))
+        bad = telegram.problem_with(FAKE_TOKEN, "my chat")
+        self.assertIn("should be a number", bad)
+        self.assertNotIn("my chat", bad)                           # the explanation never repeats the value
+
+    def test_malformed_token_is_reported_without_any_network_call(self):
+        with clean_env(TELEGRAM_BOT_TOKEN="not a token", TELEGRAM_CHAT_ID="123456789"), \
+                mock.patch.object(telegram, "_call", side_effect=AssertionError("no network call expected")):
+            res = telegram.send_telegram("hello")
+        self.assertFalse(res["sent"])
+        self.assertIn("does not look like a bot token", res["reason"])
+
+    def test_error_text_never_carries_ids(self):
+        text = telegram._explain(400, "Bad Request: chat 123456789 not found")
+        self.assertIn("[number]", text)
+        self.assertNotIn("123456789", text)
+        self.assertIn("pressed Start", text)
+
+    def test_rate_limited_message_is_not_reported_as_sent(self):
+        def limited(*_a, **_k):
+            raise urllib.error.HTTPError("https://example.invalid", 429, "Too Many Requests", None, io.BytesIO(
+                b'{"ok":false,"description":"Too Many Requests: retry after 1","parameters":{"retry_after":1}}'))
+        with clean_env(TELEGRAM_BOT_TOKEN=FAKE_TOKEN, TELEGRAM_CHAT_ID="123456789"), \
+                mock.patch("urllib.request.urlopen", side_effect=limited), mock.patch.object(telegram.time, "sleep"):
+            res = telegram.send_telegram("hello")
+        self.assertFalse(res["sent"])
+        self.assertIn("HTTP 429", res["reason"])
+        self.assertNotIn(FAKE_TOKEN, res["reason"])
+
+    def test_bot_tells_each_private_chat_its_own_id(self):
+        calls, call = self.fake_api(self.UPDATES)
+        with clean_env(TELEGRAM_BOT_TOKEN=FAKE_TOKEN), mock.patch.object(telegram, "_call", side_effect=call):
+            res = telegram.send_chat_ids()
+        sends = [p for m, p in calls if m == "sendMessage"]
+        self.assertEqual(res, {"replied": 2, "reason": None})
+        self.assertEqual([p["chat_id"] for p in sends], [444555666, 111222333])   # newest first, private only, once each
+        for p in sends:
+            self.assertIn(str(p["chat_id"]), p["text"])            # each chat is told its own id, nobody else's
+            self.assertIn("TELEGRAM_CHAT_ID", p["text"])
+
+    def test_guided_setup_command(self):
+        ok_api = self.fake_api(self.UPDATES)[1]
+        empty_api = self.fake_api([])[1]
+        refused = self.fake_api([], send=(False, telegram._explain(400, "Bad Request: chat not found")))[1]
+        cases = [   # (environment, fake API, expected exit code, text that must appear)
+            ({}, ok_api, 1, "TELEGRAM_BOT_TOKEN is not set"),
+            ({"TELEGRAM_BOT_TOKEN": FAKE_TOKEN}, ok_api, 0, "your bot has sent you your chat ID"),
+            ({"TELEGRAM_BOT_TOKEN": FAKE_TOKEN}, empty_api, 1, "press Start"),
+            ({"TELEGRAM_BOT_TOKEN": FAKE_TOKEN, "TELEGRAM_CHAT_ID": "111222333\n"}, ok_api, 0, "Telegram is working"),
+            ({"TELEGRAM_BOT_TOKEN": FAKE_TOKEN, "TELEGRAM_CHAT_ID": "111222333"}, refused, 1, "chat not found"),
+        ]
+        for env, api, expected, text in cases:
+            for ci in ("true", ""):
+                with self.subTest(env=sorted(env), ci=ci, expect=text), clean_env(GITHUB_ACTIONS=ci, **env), \
+                        mock.patch.object(telegram, "_call", side_effect=api), mock.patch.object(telegram.time, "sleep"):
+                    code, out = self.captured(run_pipeline.test_telegram)
+                self.assertEqual(code, expected)
+                self.assertIn(text, out)
+                if ci:
+                    self.assertRegex(out, r"(?m)^::(notice|error) title=[^:,]+::")      # shown on the run page
+                for secret in (FAKE_TOKEN, "111222333", "444555666"):
+                    self.assertNotIn(secret, out)                  # the log is public
+
+    # ------------------------------------------------------------------ email as the fallback channel
+    GMAIL = {"SMTP_USER": " someone@gmail.com\n", "SMTP_PASSWORD": "abcd efgh ijkl mnop\n"}
+
+    def test_gmail_needs_only_address_and_app_password(self):
+        with clean_env(**self.GMAIL):
+            self.assertEqual(telegram.email_settings(), {"host": "smtp.gmail.com", "port": 465, "user": "someone@gmail.com",
+                                                         "password": "abcdefghijklmnop", "to": "someone@gmail.com"})
+        with clean_env(SMTP_USER="someone@example.org", SMTP_PASSWORD="pw with spaces"):
+            self.assertIsNone(telegram.email_settings())                        # other providers must name their server
+        with clean_env(SMTP_USER="someone@example.org", SMTP_PASSWORD="pw with spaces", SMTP_HOST="mail.example.org",
+                       SMTP_PORT="587", EMAIL_TO="me@example.net"):
+            cfg = telegram.email_settings()
+        self.assertEqual((cfg["host"], cfg["port"], cfg["to"], cfg["password"]),
+                         ("mail.example.org", 587, "me@example.net", "pw with spaces"))
+        with clean_env():
+            self.assertIsNone(telegram.email_settings())
+
+    def test_email_carries_everything_when_telegram_is_not_set_up(self):
+        with clean_env(**self.GMAIL), mock.patch.object(telegram.smtplib, "SMTP_SSL") as smtp:
+            res = telegram.notify("routine alert", subject="S", email=False, private=True)
+        server = smtp.return_value.__enter__.return_value
+        server.login.assert_called_once_with("someone@gmail.com", "abcdefghijklmnop")
+        self.assertEqual(server.send_message.call_count, 1)
+        self.assertTrue(res["delivered"])
+        self.assertIsNone(res["reason"])
+
+    def test_with_telegram_only_urgent_items_are_also_emailed(self):
+        env = {"TELEGRAM_BOT_TOKEN": FAKE_TOKEN, "TELEGRAM_CHAT_ID": "123456789", **self.GMAIL}
+        with clean_env(**env), mock.patch.object(telegram, "_call", return_value=(True, {})), \
+                mock.patch.object(telegram.time, "sleep"), mock.patch.object(telegram.smtplib, "SMTP_SSL") as smtp:
+            telegram.notify("routine", email=False)
+            self.assertEqual(smtp.call_count, 0)
+            telegram.notify("urgent", email=True)
+            self.assertEqual(smtp.call_count, 1)
+
+    def test_guided_email_check(self):
+        with clean_env(GITHUB_ACTIONS="true"):
+            code, out = self.captured(run_pipeline.test_email)
+        self.assertEqual(code, 1)
+        self.assertIn("::error title=Email is not set up::", out)
+        with clean_env(GITHUB_ACTIONS="true", **self.GMAIL), mock.patch.object(telegram.smtplib, "SMTP_SSL"):
+            code, out = self.captured(run_pipeline.test_email)
+        self.assertEqual(code, 0)
+        self.assertIn("::notice title=Email is working::", out)
+        with clean_env(GITHUB_ACTIONS="true", **self.GMAIL), mock.patch.object(telegram.smtplib, "SMTP_SSL") as smtp:
+            smtp.return_value.__enter__.return_value.login.side_effect = telegram.smtplib.SMTPAuthenticationError(535, b"no")
+            code, out = self.captured(run_pipeline.test_email)
+        self.assertEqual(code, 1)
+        self.assertIn("app password", out)
+        for secret in ("someone@gmail.com", "abcdefghijklmnop", "abcd efgh"):
+            self.assertNotIn(secret, out)                              # the log is public
+
+    def test_email_subject_names_the_stock_and_signal(self):
+        text = "NEPSE PORTFOLIO ALERT\n\nStock: NABIL\n\nCurrent Price: NPR 549.0\n\nSignal: REDUCE\n\nReason:\nTarget reached."
+        self.assertEqual(run_pipeline.subject_of(text), "NEPSE PORTFOLIO ALERT - NABIL - REDUCE")
+        self.assertEqual(run_pipeline.subject_of("NEPSE CRITICAL NEWS\n\nSome headline"), "NEPSE CRITICAL NEWS")
+
+    def test_passphrase_secret_with_a_stray_line_break_still_decrypts(self):
+        try:
+            import cryptography  # noqa: F401
+        except ImportError:
+            self.skipTest("cryptography not installed")
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "portfolio.enc.json"
+            path.write_text(json.dumps(secure_store.encrypt_blob({"transactions": []}, "five random words here", 1000)))
+            with mock.patch.object(secure_store, "ENC_PATH", path):
+                with clean_env(PORTFOLIO_PASSPHRASE="five random words here\n"):
+                    self.assertEqual(secure_store.load_portfolio(), ({"transactions": []}, "encrypted file"))
+                with clean_env(PORTFOLIO_PASSPHRASE="something else"):
+                    portfolio, why = secure_store.load_portfolio()
+                    self.assertIsNone(portfolio)
+                    self.assertIn("could not be decrypted", why)
 
 
 if __name__ == "__main__":

@@ -214,8 +214,8 @@ def _digester(state: dict, private: bool):
     fast HMAC over a human-chosen passphrase would hand an attacker a far cheaper way to test passphrase guesses
     than the encrypted portfolio file does. A machine-generated secret (the bot token) is preferred.
     """
-    material = next((os.environ[k] for k in ("TELEGRAM_BOT_TOKEN", "SMTP_PASSWORD", "PORTFOLIO_PASSPHRASE")
-                     if os.environ.get(k)), None)
+    material = next((os.environ[k].strip() for k in ("TELEGRAM_BOT_TOKEN", "SMTP_PASSWORD", "PORTFOLIO_PASSPHRASE")
+                     if os.environ.get(k, "").strip()), None)
     if material is None:
         if private:
             return None

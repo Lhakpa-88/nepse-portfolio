@@ -20,7 +20,7 @@ on:
         description: 'Pipeline command'
         type: choice
         default: auto
-        options: [auto, all, collect, analyze, news, alerts, 'report premarket', 'report daily', 'report weekly', 'report monthly', test-telegram]
+        options: [auto, all, collect, analyze, news, alerts, 'report premarket', 'report daily', 'report weekly', 'report monthly', test-telegram, test-email]
       dry_run:
         description: 'Dry run: send nothing. (Portfolio-based content is never shown in this log.)'
         type: boolean

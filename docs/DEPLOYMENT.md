@@ -60,7 +60,7 @@ The push starts two workflows (repository → **Actions**):
 
 | Workflow | What it does | Duration |
 |----------|--------------|----------|
-| *Tests* | Runs the 32 Python and 7 TypeScript tests and a production build | 2–3 min |
+| *Tests* | Runs the 44 Python and 7 TypeScript tests and a production build | 2–3 min |
 | *Market pipeline and deploy* | Downloads prices, a year of history and fundamentals; analyses; collects news; publishes the site | 8–15 min the first time, 2–3 min afterwards |
 
 When *Market pipeline and deploy* is green, open the site:
@@ -87,11 +87,14 @@ Repository → **Settings → Secrets and variables → Actions → New reposito
 
 | Secret | Required for | Value |
 |--------|--------------|-------|
-| `TELEGRAM_BOT_TOKEN` | Telegram alerts | From @BotFather — see [TELEGRAM_SETUP.md](TELEGRAM_SETUP.md) |
-| `TELEGRAM_CHAT_ID` | Telegram alerts | Your numeric chat id |
+| `TELEGRAM_BOT_TOKEN` | Telegram alerts | From @BotFather |
+| `TELEGRAM_CHAT_ID` | Telegram alerts | Your numeric chat id (the bot tells you: run `test-telegram` once with only the token set) |
+| `SMTP_USER`, `SMTP_PASSWORD` | Email alerts, instead of or as well as Telegram | Your address and an app password. Gmail needs nothing else; other providers also need `SMTP_HOST` |
 | `PORTFOLIO_PASSPHRASE` | Position-aware alerts | The passphrase you type in dashboard Settings when encrypting |
 | `ANTHROPIC_API_KEY` | Optional AI summary line in reports | Your own key; leave unset to stay fully rule-based |
-| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `EMAIL_TO` | Optional email copies | e.g. Gmail SMTP with an app password |
+
+Step-by-step instructions for both channels, and which to choose, are in [TELEGRAM_SETUP.md](TELEGRAM_SETUP.md).
+Telegram is blocked by internet providers in Nepal, so check that the app works for you before relying on it.
 
 Without any secrets the pipeline still collects data and publishes the dashboard; notifications are skipped.
 
@@ -111,8 +114,9 @@ Set the same passphrase as the `PORTFOLIO_PASSPHRASE` secret.
 
 ## 7. Verify
 
-* **Actions → Market pipeline and deploy → Run workflow** → command `test-telegram`. A test message should arrive;
-  if it does not, the run fails and its log shows the reason (HTTP status only, never the token).
+* **Actions → Market pipeline and deploy → Run workflow** → command `test-telegram` or `test-email`. A test
+  message should arrive and the run page says so; if it does not, the run fails and the reason is shown at the top
+  of the run page (never the token, password, chat id or address).
 * Run `alerts`. The log shows how many alerts were found and delivered, for example
   `6 candidate(s), 2 delivered`. **It never shows their content**, because this log is public; read them in Telegram.
 * Dashboard → Settings → *Market data sources & health* shows which source served each dataset.

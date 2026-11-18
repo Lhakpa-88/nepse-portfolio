@@ -2,7 +2,7 @@
 
 A personal, AI-assisted portfolio management and investment research system for an individual investor on the
 Nepal Stock Exchange (NEPSE). It runs entirely on free infrastructure: a static dashboard on **GitHub Pages**, a
-scheduled **GitHub Actions** pipeline for data, analysis, news and **Telegram** alerts, and no paid API.
+scheduled **GitHub Actions** pipeline for data, analysis, news and **Telegram or email** alerts, and no paid API.
 
 > **Decision support only.** Nothing here is licensed investment advice or a prediction, and the system never
 > places orders. Every buy or sell is your own manual decision. Prices come from unofficial public sources and can
@@ -53,7 +53,8 @@ More detail: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 1. **Create the GitHub repository and deploy** — follow [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) (about 10 minutes).
 2. **Open the dashboard** at `https://<your-username>.github.io/<repo>/` and click *Load DEMO portfolio* to explore.
 3. **Enter your transactions** — [docs/USER_GUIDE.md](docs/USER_GUIDE.md). Use the Excel template for bulk import.
-4. **Turn on Telegram alerts** — [docs/TELEGRAM_SETUP.md](docs/TELEGRAM_SETUP.md).
+4. **Turn on alerts** by Telegram or email — [docs/TELEGRAM_SETUP.md](docs/TELEGRAM_SETUP.md). Telegram is blocked by
+   internet providers in Nepal, so check the app works for you; email works on any connection.
 5. **Sync your encrypted portfolio** (Settings → Privacy, backup & encrypted sync) so alerts know your holdings.
 
 ### Run locally
@@ -72,7 +73,7 @@ npm run dev            # http://localhost:5173
 
 ```bash
 # tests
-python -m unittest discover -s tests -t . -v     # 32 tests
+python -m unittest discover -s tests -t . -v     # 44 tests
 cd frontend && npm test                          # 7 tests
 ```
 
@@ -84,7 +85,8 @@ Useful pipeline commands (`python -m scripts.run_pipeline --help`):
 | `collect` / `analyze` / `news` | Individual stages |
 | `alerts --dry-run` | Show the alerts that would be sent (content is shown locally only, never in a GitHub log) |
 | `report daily --dry-run` | Preview a report (`premarket`, `daily`, `weekly`, `monthly`) |
-| `test-telegram` | Send a test message |
+| `test-telegram` | Guided Telegram check: with only the token set the bot tells you your chat id, then it sends a test |
+| `test-email` | Send a test email |
 
 ## Data sources and their limits (please read)
 
@@ -115,7 +117,7 @@ international news.
 |-------|----------|
 | [DEPLOYMENT.md](docs/DEPLOYMENT.md) | Step-by-step GitHub repository, Pages and Actions setup |
 | [DATA_SOURCES.md](docs/DATA_SOURCES.md) | Source investigation, configuration, adding a licensed provider |
-| [TELEGRAM_SETUP.md](docs/TELEGRAM_SETUP.md) | Creating the bot, secrets, alert thresholds |
+| [TELEGRAM_SETUP.md](docs/TELEGRAM_SETUP.md) | Telegram and email alerts: which to choose, setup, thresholds |
 | [USER_GUIDE.md](docs/USER_GUIDE.md) | Adding, correcting and removing transactions; import; daily use |
 | [CALCULATIONS.md](docs/CALCULATIONS.md) | Every formula, with the hand-worked examples used in the tests |
 | [METHODOLOGY.md](docs/METHODOLOGY.md) | Scoring model, recommendation rules, confidence, screens |

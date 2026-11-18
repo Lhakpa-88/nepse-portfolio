@@ -1,36 +1,100 @@
-# Telegram notifications
+# Notifications: Telegram and email
 
-Alerts are sent by the GitHub Actions pipeline. The bot token lives only in GitHub Secrets; it is never in the
-dashboard, the repository or the Pages site.
+Alerts and reports are sent by the GitHub Actions pipeline, from GitHub's servers. Tokens and passwords live only
+in GitHub Secrets; they are never in the dashboard, the repository or the Pages site, and the pipeline never
+prints them, your chat id or your address in its (public) log.
 
-## 1. Create your bot
+## Which channel?
+
+| | Telegram | Email |
+|---|----------|-------|
+| Best for | Instant push notifications on your phone | Reliability; works on any connection |
+| Needs | The Telegram app working where you are | A mailbox that allows app passwords (Gmail does) |
+| Secrets | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | `SMTP_USER`, `SMTP_PASSWORD` |
+
+**In Nepal, check Telegram first.** Nepali internet providers were instructed by the telecom regulator to block
+Telegram in July 2025. Where that block applies, the pipeline can still *send* (it runs outside Nepal) but your
+Telegram app will not *receive*. If Telegram does not open on your phone, use email.
+
+How the two combine:
+
+* **Only Telegram set up** – everything goes to Telegram.
+* **Only email set up** – everything goes to email.
+* **Both set up** – everything goes to Telegram, and the urgent items (stop-loss alerts, critical news, weekly
+  and monthly reports) are also emailed.
+
+Add secrets at: repository → **Settings → Secrets and variables → Actions → New repository secret**.
+Run commands at: repository → **Actions → Market pipeline and deploy → Run workflow**.
+
+## Telegram
+
+### 1. Create your bot
 
 1. In Telegram, open a chat with **@BotFather** (the verified one with the blue tick).
-2. Send `/newbot`, choose a display name and a username ending in `bot`.
+2. Send `/newbot`, choose a display name, then a username ending in `bot`.
 3. BotFather replies with a token that looks like `1234567890:AA…`. Treat it like a password.
 
-## 2. Get your chat id
+### 2. Save the token
 
-1. Open a chat with your new bot and press **Start** (a bot cannot message you until you do).
-2. Send any message, for example `hello`.
-3. In a browser open `https://api.telegram.org/bot<YOUR_TOKEN>/getUpdates`
-4. Find `"chat":{"id":123456789` — that number is your chat id. (For a group it is negative.)
+Add the secret `TELEGRAM_BOT_TOKEN` with the token as its value.
 
-## 3. Add the secrets
+### 3. Let the bot tell you your chat id
 
-GitHub repository → **Settings → Secrets and variables → Actions → New repository secret**:
+1. Open your new bot's chat in Telegram and press **Start** (a bot cannot message you until you do).
+2. Run the workflow with the command **`test-telegram`**.
+3. Within a couple of minutes the bot sends you a message containing **your chat ID**.
 
-* `TELEGRAM_BOT_TOKEN` — the token from step 1
-* `TELEGRAM_CHAT_ID` — the number from step 2
+The run page shows *"Check Telegram - your bot has sent you your chat ID"*. If instead it says *"The bot could
+not reach you yet"*, press Start in the bot chat and run it again.
 
-## 4. Test
+### 4. Save the chat id and test
 
-**Actions → Market pipeline and deploy → Run workflow** → command `test-telegram`. You should receive:
+1. Add the secret `TELEGRAM_CHAT_ID` with that number as its value.
+2. Run **`test-telegram`** again. You should receive:
 
 > NEPSE Portfolio Intelligence: test message. Your Telegram notifications are working.
 
-If the job fails, the log shows the HTTP status only (the token is never printed). 401 = wrong token,
-400 = wrong chat id or you have not pressed Start in the bot chat.
+The run page then shows *"Telegram is working"*. If it fails, the reason is at the top of the run page:
+
+| Message | Meaning |
+|---------|---------|
+| *the bot token was rejected* (HTTP 401) | The token is wrong or was revoked: copy it again from @BotFather |
+| *check TELEGRAM_CHAT_ID…* (HTTP 400) | The chat id is wrong, or you have not pressed Start in the bot chat |
+| *the bot is not allowed to message you yet* (HTTP 403) | You blocked the bot or never started it |
+| *does not look like a bot token* | Something other than the token was pasted (it is digits, a colon, then about 35 characters) |
+
+A stray space or line break around a pasted value is ignored.
+
+<details>
+<summary>Finding the chat id by hand instead</summary>
+
+Send your bot a message, then open `https://api.telegram.org/bot<YOUR_TOKEN>/getUpdates` in a browser and look for
+`"chat":{"id":123456789`. That number is your chat id (a group's id is negative). This puts the token in your
+browser history, which is why the bot-assisted way above is preferred.
+</details>
+
+## Email
+
+Works with any SMTP mailbox. Gmail needs only two secrets.
+
+### Gmail
+
+1. Turn on **2-Step Verification** for the Google account (Google Account → Security).
+2. Create an **app password**: <https://myaccount.google.com/apppasswords> → give it a name such as
+   `nepse-portfolio` → Google shows a 16-character password. This is not your normal password, and it can be
+   revoked at any time without affecting your account.
+3. Add two secrets:
+   * `SMTP_USER` – your full Gmail address
+   * `SMTP_PASSWORD` – the 16-character app password (spaces are fine)
+4. Run the workflow with the command **`test-email`**. The run page shows *"Email is working"* and the message
+   arrives in your inbox (check spam the first time).
+
+Alerts are sent from your own address to your own address. To deliver them elsewhere add the secret `EMAIL_TO`.
+
+### Other providers
+
+Also add `SMTP_HOST` (for example `smtp.mail.yahoo.com`) and, if the provider uses STARTTLS, `SMTP_PORT` = `587`
+(the default is 465, SSL). Many providers require an app password rather than the account password.
 
 ## What you will receive
 
@@ -94,15 +158,16 @@ Data updated: 2026-11-17T14:59:59 NPT (fresh)
 Per-stock **target** and **stop** prices are set in the dashboard (My Portfolio → Target / Stop columns) and travel
 inside the encrypted portfolio file, so re-sync after changing them.
 
-Alerts pause automatically when market data is stale, so you are never told to act on old prices.
+Alerts pause automatically when market data is stale, so you are never told to act on old prices. An alert that
+fails to send is not marked as sent: it is retried on the next run, and the run is shown as failed.
 
 ## Position-aware alerts need your holdings
 
 Without the encrypted portfolio the pipeline runs in *market-only* mode: news and opportunity alerts work, but it
 cannot know your cost, weights, targets or stops. See step 6 of [DEPLOYMENT.md](DEPLOYMENT.md).
 
-## Optional email copies
+## If a token or password leaks
 
-Set `SMTP_HOST`, `SMTP_PORT` (465), `SMTP_USER`, `SMTP_PASSWORD` and `EMAIL_TO` secrets. Stop-loss alerts,
-critical news and the weekly/monthly reports are then also emailed. With Gmail, create an *app password*; your
-normal password will not work.
+* Telegram: send `/revoke` to @BotFather, then update `TELEGRAM_BOT_TOKEN`.
+* Gmail: delete the app password at <https://myaccount.google.com/apppasswords>, create a new one and update
+  `SMTP_PASSWORD`.

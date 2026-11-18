@@ -63,13 +63,21 @@ def encrypt_blob(obj: dict, passphrase: str, iterations: int = 600000) -> dict:
 def load_portfolio() -> tuple[dict | None, str]:
     """Returns (portfolio, how) where how explains the source or why it is unavailable."""
     passphrase = os.environ.get("PORTFOLIO_PASSPHRASE", "")
-    if ENC_PATH.exists() and passphrase:
+    if ENC_PATH.exists() and passphrase.strip():
         try:
-            return decrypt_blob(json.loads(ENC_PATH.read_text(encoding="utf-8")), passphrase), "encrypted file"
-        except ImportError:
-            return None, "the 'cryptography' package is not installed (pip install cryptography)"
-        except Exception:  # noqa: BLE001 - wrong passphrase / corrupt file; never print secrets
-            return None, "encrypted portfolio could not be decrypted (wrong PORTFOLIO_PASSPHRASE?)"
+            blob = json.loads(ENC_PATH.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None, "encrypted portfolio file is not valid JSON (upload it again from the dashboard)"
+        # Try the secret exactly as stored, then without surrounding whitespace: a value pasted into GitHub
+        # Secrets often carries a stray line break that was never part of the passphrase.
+        for candidate in dict.fromkeys((passphrase, passphrase.strip())):
+            try:
+                return decrypt_blob(blob, candidate), "encrypted file"
+            except ImportError:
+                return None, "the 'cryptography' package is not installed (pip install cryptography)"
+            except Exception:  # noqa: BLE001 - wrong passphrase / corrupt file; never print secrets
+                continue
+        return None, "encrypted portfolio could not be decrypted (wrong PORTFOLIO_PASSPHRASE?)"
     raw = os.environ.get("PORTFOLIO_JSON", "")
     if raw:
         try:

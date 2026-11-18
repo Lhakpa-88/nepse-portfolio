@@ -7,7 +7,8 @@
   python -m scripts.run_pipeline alerts          # evaluate and send alerts
   python -m scripts.run_pipeline report daily    # premarket | daily | weekly | monthly
   python -m scripts.run_pipeline all             # collect + analyze + news + alerts (no report)
-  python -m scripts.run_pipeline test-telegram   # send a test message
+  python -m scripts.run_pipeline test-telegram   # guided Telegram check (tells you your chat id, then sends a test)
+  python -m scripts.run_pipeline test-email      # send a test email
 
 Options: --out DIR (default frontend/public/data)  --dry-run (print instead of sending)  --no-fundamentals
 """
@@ -59,6 +60,17 @@ def step(name, fn, private: bool = False):
 ERRORS: list[str] = []
 
 
+def subject_of(text: str) -> str:
+    """Email subject for an alert: its heading, plus the stock and signal when it has them."""
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    parts = [lines[0] if lines else "NEPSE alert"]
+    for prefix in ("Stock:", "Signal:"):
+        value = next((ln[len(prefix):].strip() for ln in lines if ln.startswith(prefix)), "")
+        if value:
+            parts.append(value.split(" (")[0].split(" | ")[0])
+    return " - ".join(parts)[:120]
+
+
 def do_alerts(out: Path, dry: bool):
     portfolio, how = secure_store.load_portfolio()
     private = portfolio is not None
@@ -76,7 +88,8 @@ def do_alerts(out: Path, dry: bool):
     reasons: set[str] = set()
 
     def deliver(a: dict) -> bool:
-        res = telegram.notify(a["text"], email=a["kind"] in ("stop", "critical_news"), private=private)
+        res = telegram.notify(a["text"], subject=subject_of(a["text"]), email=a["kind"] in ("stop", "critical_news"),
+                              private=private)
         if not res["delivered"]:
             reasons.add(res["reason"] or "unknown")
         return res["delivered"]
@@ -104,6 +117,59 @@ def do_report(kind: str, out: Path, dry: bool, sent=None):
     print(f"[{kind} report] " + ("delivered" if res["delivered"] else f"NOT delivered ({res['reason']})"))
     if not res["delivered"] and "not configured" not in (res["reason"] or ""):
         ERRORS.append(f"{kind} report delivery")
+
+
+def annotate(level: str, title: str, message: str) -> None:
+    """A notice or error shown at the top of the GitHub run page, so the reason is visible without opening the log.
+
+    That page is public: never pass a token, a chat id or anything from the portfolio. `title` must not contain
+    ':' or ',' (GitHub's annotation syntax).
+    """
+    if secure_store.logs_are_public():
+        print(f"::{level} title={title}::{message}")
+    else:
+        print(f"[{level}] {title}. {message}")
+
+
+def test_telegram() -> int:
+    """Guided check of the Telegram setup. With only the token set, the bot first tells you your chat id."""
+    token, chat = telegram.credentials()
+    if not token:
+        annotate("error", "TELEGRAM_BOT_TOKEN is not set",
+                 "Create a bot with @BotFather in Telegram, then add its token under Settings > Secrets and variables > "
+                 "Actions as TELEGRAM_BOT_TOKEN and run test-telegram again.")
+        return 1
+    if not chat:
+        res = telegram.send_chat_ids()
+        if res["replied"]:
+            annotate("notice", "Check Telegram - your bot has sent you your chat ID",
+                     "Add that number under Settings > Secrets and variables > Actions as TELEGRAM_CHAT_ID, "
+                     "then run test-telegram again to receive the test message.")
+            return 0
+        annotate("error", "The bot could not reach you yet", f"{res['reason']}. Then run test-telegram again.")
+        return 1
+    res = telegram.notify("NEPSE Portfolio Intelligence: test message. Your Telegram notifications are working.")
+    if res["delivered"]:
+        annotate("notice", "Telegram is working", "The test message was delivered. Alerts and reports will arrive in that chat.")
+        return 0
+    annotate("error", "The test message was not delivered", f"{res['reason']}.")
+    return 1
+
+
+def test_email() -> int:
+    """Guided check of the email setup."""
+    if telegram.email_settings() is None:
+        annotate("error", "Email is not set up",
+                 "Add two secrets under Settings > Secrets and variables > Actions - SMTP_USER (your full email address) "
+                 "and SMTP_PASSWORD (for Gmail this is a 16-character app password and not your normal password). "
+                 "Providers other than Gmail also need SMTP_HOST. Then run test-email again.")
+        return 1
+    res = telegram.send_email("NEPSE Portfolio Intelligence - test", "Test message. Your email notifications are working.")
+    if res["sent"]:
+        annotate("notice", "Email is working", "The test email was sent. Check your inbox and the spam folder the first time.")
+        return 0
+    annotate("error", "The test email was not sent", f"{res['reason']}.")
+    return 1
 
 
 def auto(out: Path, dry: bool):
@@ -141,7 +207,8 @@ def auto(out: Path, dry: bool):
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("command", choices=["auto", "collect", "analyze", "news", "alerts", "report", "all", "test-telegram"])
+    ap.add_argument("command", choices=["auto", "collect", "analyze", "news", "alerts", "report", "all", "test-telegram",
+                                        "test-email"])
     ap.add_argument("kind", nargs="?", default="daily", choices=["premarket", "daily", "weekly", "monthly"])
     ap.add_argument("--out", default=str(ROOT / "frontend" / "public" / "data"))
     ap.add_argument("--dry-run", action="store_true")
@@ -174,9 +241,9 @@ def main() -> int:
         step("news", lambda: news_mod.run(out))
         step("alerts", lambda: do_alerts(out, dry), private=True)
     elif a.command == "test-telegram":
-        r = telegram.notify("NEPSE Portfolio Intelligence: test message. Your Telegram notifications are working.")
-        print("Test message delivered." if r["delivered"] else f"Test message NOT delivered: {r['reason']}")
-        return 0 if r["delivered"] else 1
+        return test_telegram()
+    elif a.command == "test-email":
+        return test_email()
     if ERRORS:
         print(f"Completed with failures in: {', '.join(ERRORS)}")
         return 1

@@ -23,9 +23,9 @@ On a public repository three more things are world-readable, and the pipeline is
   location and error type because an error message can contain a holding or a price. Tests enforce this
   (`tests/test_pipeline.py::PublicLogTest`). To read the actual text, use Telegram or run the command locally.
 * **The alert cooldown state** (`state/alerts.json` on the `market-data` branch). It holds only keyed digests.
-  The key is stretched with PBKDF2 (300,000 rounds, random per-repository salt) from the bot token, so the file
-  cannot be used to learn your holdings or to guess your passphrase cheaply. With no secret configured, no state
-  is written for portfolio alerts at all.
+  The key is stretched with PBKDF2 (300,000 rounds, random per-repository salt) from the bot token (without
+  Telegram: the email password, then the passphrase), so the file cannot be used to learn your holdings or to
+  guess a secret cheaply. With no secret configured, no state is written for portfolio alerts at all.
 * **Commit metadata.** Every commit shows its author name and email. Use GitHub's no-reply address
   (`<username>@users.noreply.github.com`) for this repository if you do not want your email published.
 

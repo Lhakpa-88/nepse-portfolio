@@ -172,7 +172,8 @@ export default function Settings() {
         <Card title="Notifications (Telegram / email)">
           <p className="text-sm text-mute">Alerts are sent by the scheduled GitHub Actions pipeline, not by this page, so no bot token is ever exposed in the browser. Set these repository secrets (Settings → Secrets and variables → Actions):</p>
           <ul className="mt-2 list-disc space-y-1 pl-5 text-sm">
-            <li><code>TELEGRAM_BOT_TOKEN</code> and <code>TELEGRAM_CHAT_ID</code> — from @BotFather (see docs/TELEGRAM_SETUP.md)</li>
+            <li><code>TELEGRAM_BOT_TOKEN</code> and <code>TELEGRAM_CHAT_ID</code> — Telegram (check the app works on your connection: it is blocked by internet providers in Nepal)</li>
+            <li><code>SMTP_USER</code> and <code>SMTP_PASSWORD</code> — email, instead of or as well as Telegram (Gmail: your address and an app password)</li>
             <li><code>PORTFOLIO_PASSPHRASE</code> — the passphrase used above, so the pipeline can read your encrypted holdings</li>
             <li><code>ANTHROPIC_API_KEY</code> — optional, adds a short AI-written summary to the daily report</li>
           </ul>
