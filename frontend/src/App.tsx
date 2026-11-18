@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, type ReactNode } from 'react';
-import { HashRouter, NavLink, Route, Routes } from 'react-router-dom';
-import { Banner } from './components/ui';
+import { HashRouter, NavLink, Route, Routes, useLocation } from 'react-router-dom';
+import { Banner, ErrorBoundary } from './components/ui';
 import { StockDetail } from './components/StockDetail';
 import { MarketProvider, staleness, useMarket } from './lib/data';
 import { fmtTime, num, pct, tone } from './lib/format';
@@ -36,6 +36,7 @@ function Shell({ children }: { children: ReactNode }) {
   const m = useMarket();
   const { state, updateSettings } = useStore();
   const [menu, setMenu] = useState(false);
+  const page = useLocation().pathname;
   const st = staleness(m);
   const nepse = m.market?.main.find((i) => i.name === 'NEPSE Index');
   return (
@@ -88,7 +89,8 @@ function Shell({ children }: { children: ReactNode }) {
             {state.demo && (
               <Banner level="info"><b>DEMO portfolio loaded.</b> These transactions are sample data for testing, not your holdings. Market prices shown are real. Clear it in Settings → Data.</Banner>
             )}
-            {children}
+            {/* keyed by page: moving to another page clears a display error */}
+            <ErrorBoundary key={page} what="This page">{children}</ErrorBoundary>
           </div>
         </main>
       </div>
@@ -109,7 +111,11 @@ export default function App() {
                 <Route path="*" element={<Overview />} />
               </Routes>
             </Shell>
-            {symbol && <StockDetail symbol={symbol} onClose={() => setSymbol(null)} />}
+            {symbol && (
+              <ErrorBoundary key={symbol} what={`The detail view for ${symbol}`} overlay onClose={() => setSymbol(null)}>
+                <StockDetail symbol={symbol} onClose={() => setSymbol(null)} />
+              </ErrorBoundary>
+            )}
           </HashRouter>
         </StockCtx.Provider>
       </MarketProvider>

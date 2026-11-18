@@ -183,7 +183,15 @@ def market_score(regime: dict, sstats: dict, sector_day_change) -> dict:
     w = {"market": 0.5, "sectorMomentum": 0.35, "sectorToday": 0.15}
     avail = {k: v for k, v in comp.items() if v is not None}
     score = sum(v * w[k] for k, v in avail.items()) / sum(w[k] for k in avail) if avail else None
-    return {"score": score, "coverage": len(avail) / 3, "components": comp}
+    notes = []
+    if regime.get("label") not in (None, "Unknown"):
+        notes.append(f"NEPSE trend: {regime['label']}")
+    if sstats.get("avgRet1m") is not None:
+        notes.append(f"Sector stocks moved {sstats['avgRet1m']:+.1f}% on average over the last month")
+    if sector_day_change is not None:
+        notes.append(f"Sector index {sector_day_change:+.2f}% today")
+    # every score block has the same shape (score, coverage, components, notes): the dashboard relies on it
+    return {"score": score, "coverage": len(avail) / 3, "components": comp, "notes": notes}
 
 
 def risk_score(t: dict, f: dict | None, val: dict, sector: str, levels: dict) -> dict:

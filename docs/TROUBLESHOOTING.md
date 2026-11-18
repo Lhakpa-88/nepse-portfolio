@@ -14,6 +14,7 @@
 | Numbers differ from my broker | Charges on the contract note differ from the schedule, or bonus cost basis differs | Enter the exact charges on that transaction; check Settings → cost-basis method and bonus cost |
 | Portfolio chart starts only about a year ago | Free sources provide about one year of daily history | Expected; holdings and P/L are still complete |
 | Page is blank after an update | Old cached script | Hard refresh (Ctrl+Shift+R) |
+| A box says "… could not be displayed" | A display error in that one view | Your data is not affected and the rest of the dashboard keeps working. Close the box or open another page, then reload. If it comes back, note the message shown in the box: it names the cause |
 
 ## Pipeline (GitHub Actions)
 
@@ -72,7 +73,11 @@ or `FAILED` with a traceback.
 ## Tests
 
 ```bash
-python -m unittest discover -s tests -t . -v    # accounting, indicators, scoring, calendar, failover, crypto, alerts, news
-cd frontend && npm test                         # TypeScript engine against the same hand-computed fixtures
+python -m unittest discover -s tests -t . -v    # accounting, indicators, scoring, calendar, failover, crypto, alerts, news, schedule
+cd frontend && npm test                         # engine vs hand-computed fixtures, encryption, every page and view rendered
 cd frontend && npm run build                    # type-check and production build
 ```
+
+The dashboard tests render every page and the stock detail view with a real sample of the published data
+(`tests/fixtures/site_data`). Refresh that sample after changing the data format:
+`python -m scripts.make_test_sample` (run it during a trading session so it includes a stock with no trade yet).

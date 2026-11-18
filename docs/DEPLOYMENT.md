@@ -60,7 +60,7 @@ The push starts two workflows (repository → **Actions**):
 
 | Workflow | What it does | Duration |
 |----------|--------------|----------|
-| *Tests* | Runs the 57 Python and 12 TypeScript tests and a production build | 2–3 min |
+| *Tests* | Runs the 57 Python tests and the 48 dashboard tests (calculations, encryption, and every page and view rendered with sample data), then a production build | 2–3 min |
 | *Market pipeline and deploy* | Downloads prices, a year of history and fundamentals; analyses; collects news; publishes the site | 8–15 min the first time, 2–3 min afterwards |
 
 When *Market pipeline and deploy* is green, open the site:

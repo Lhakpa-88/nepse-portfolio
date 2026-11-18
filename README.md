@@ -75,7 +75,7 @@ npm run dev            # http://localhost:5173
 ```bash
 # tests
 python -m unittest discover -s tests -t . -v     # 57 tests
-cd frontend && npm test                          # 12 tests
+cd frontend && npm test                          # 48 tests: calculations, encryption, every page and view rendered
 ```
 
 Useful pipeline commands (`python -m scripts.run_pipeline --help`):

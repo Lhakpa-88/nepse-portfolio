@@ -1,5 +1,38 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { Component, useMemo, useState, type ReactNode } from 'react';
 import { tone } from '../lib/format';
+
+/**
+ * Contains a display error to the view it happened in. Without it, one bad value in one component
+ * would blank the entire dashboard. The portfolio itself is never touched by a display error.
+ */
+export class ErrorBoundary extends Component<{ children: ReactNode; what?: string; overlay?: boolean; onClose?: () => void }, { error: Error | null }> {
+  state: { error: Error | null } = { error: null };
+
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+
+  componentDidCatch(error: Error) {
+    console.error('A view failed to display:', error);
+  }
+
+  render() {
+    if (!this.state.error) return this.props.children;
+    const box = (
+      <div className="card w-full max-w-xl p-4" role="alert">
+        <div className="text-sm font-semibold text-down">{this.props.what ?? 'This view'} could not be displayed.</div>
+        <div className="mt-1 text-sm text-mute">Your portfolio data is not affected. The rest of the dashboard still works.</div>
+        <div className="mt-2 rounded bg-bg px-2 py-1 font-mono text-xs text-mute">{String(this.state.error.message).slice(0, 200)}</div>
+        <button className="btn mt-3" onClick={() => { this.setState({ error: null }); this.props.onClose?.(); }}>
+          {this.props.onClose ? 'Close' : 'Try again'}
+        </button>
+      </div>
+    );
+    return this.props.overlay
+      ? <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 p-6">{box}</div>
+      : box;
+  }
+}
 
 export function Card({ title, right, children, className = '' }: { title?: ReactNode; right?: ReactNode; children: ReactNode; className?: string }) {
   return (

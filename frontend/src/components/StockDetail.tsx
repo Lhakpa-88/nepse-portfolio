@@ -31,13 +31,14 @@ function ScoreBlock({ title, s, invert = false, weight }: { title: string; s: Sc
         <ScoreBar value={s.score} invert={invert} />
       </div>
       <div className="space-y-1">
-        {Object.entries(s.components).map(([k, v]) => (
+        {Object.entries(s.components ?? {}).map(([k, v]) => (
           <div key={k} className="flex items-center justify-between text-xs text-mute">
             <span>{LABELS[k] ?? k}</span><ScoreBar value={v} invert={invert} />
           </div>
         ))}
       </div>
-      {s.notes.length > 0 && <ul className="mt-2 list-disc space-y-0.5 pl-4 text-xs">{s.notes.map((n) => <li key={n}>{n}</li>)}</ul>}
+      {/* notes are optional in the data: never assume the list exists */}
+      {(s.notes ?? []).length > 0 && <ul className="mt-2 list-disc space-y-0.5 pl-4 text-xs">{(s.notes ?? []).map((n) => <li key={n}>{n}</li>)}</ul>}
     </div>
   );
 }

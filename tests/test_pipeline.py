@@ -627,6 +627,16 @@ class IntradayDataTest(unittest.TestCase):
         collect.write_json(self.d / "fundamentals.json", {"symbols": {}})
 
         during = build.build(self.d, now=datetime.fromisoformat(f"{self.TODAY}T12:00").replace(tzinfo=cal.NPT))
+        # Data contract with the dashboard: every score block of every stock has the same shape. A block without
+        # its `notes` list once crashed the stock detail view (frontend/src/App.test.tsx covers the other side).
+        for symbol, stock in during["stocks"].items():
+            for area in ("fundamental", "technical", "valuation", "market", "risk"):
+                block = stock[area]
+                self.assertIn("score", block, f"{symbol}.{area}")
+                self.assertIsInstance(block.get("components"), dict, f"{symbol}.{area}.components")
+                self.assertIsInstance(block.get("notes"), list, f"{symbol}.{area}.notes")
+            self.assertIsInstance(stock["dataGaps"], list)
+            self.assertIsInstance(stock["categories"], list)
         self.assertTrue(during["sessionInProgress"])
         self.assertEqual(during["indicatorsThrough"], days[-1])
         live, idle = during["stocks"]["LIVE"], during["stocks"]["IDLE"]
