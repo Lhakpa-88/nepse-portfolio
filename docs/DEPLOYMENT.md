@@ -60,7 +60,7 @@ The push starts two workflows (repository → **Actions**):
 
 | Workflow | What it does | Duration |
 |----------|--------------|----------|
-| *Tests* | Runs the 44 Python and 7 TypeScript tests and a production build | 2–3 min |
+| *Tests* | Runs the 48 Python and 12 TypeScript tests and a production build | 2–3 min |
 | *Market pipeline and deploy* | Downloads prices, a year of history and fundamentals; analyses; collects news; publishes the site | 8–15 min the first time, 2–3 min afterwards |
 
 When *Market pipeline and deploy* is green, open the site:
@@ -100,17 +100,31 @@ Without any secrets the pipeline still collects data and publishes the dashboard
 
 ## 6. Give the pipeline your holdings (encrypted)
 
-Enter your transactions on the **published site** (not on a local test copy: browsers keep each address's data
-separately). Then, in the dashboard: **Settings → Privacy, backup & encrypted sync**.
+Your transactions stay in your browser. For position-aware alerts the pipeline needs a copy, which you give it
+**encrypted**; only you know the passphrase.
 
-*Easiest:* type a passphrase (12+ characters) → **Download encrypted file** → upload the file to the repository as
-`data/private/portfolio.enc.json` (GitHub → Add file → Upload files).
+1. **Enter your transactions on the published site** (not on a local test copy: browsers keep each address's
+   data separately). Check that the Holdings tab matches your actual share balances.
+2. **Choose a passphrase** of 12 or more characters (five random words work well) and write it down somewhere
+   safe. If you lose it, the encrypted file cannot be recovered.
+3. **Save the passphrase in GitHub first**: add the secret `PORTFOLIO_PASSPHRASE`. Doing this before the upload
+   means the very first run can read the file.
+4. **Create the encrypted file**: dashboard → Settings → *Privacy, backup & encrypted sync* → type the same
+   passphrase → **Download encrypted file**. The file must be named exactly `portfolio.enc.json` (if the browser
+   saved it as `portfolio.enc (1).json`, rename it).
+5. **Upload it** to the folder `data/private/` of the repository: open
+   `https://github.com/<username>/nepse-portfolio/upload/main/data/private`, drop the file in, and click
+   **Commit changes**. This starts a pipeline run.
+6. **Check the run page** (Actions tab). It shows *"Your portfolio was loaded"*; if the passphrase does not match
+   it shows *"Your portfolio was NOT loaded"* with the reason.
 
-*One click:* create a fine-grained personal access token (GitHub → Settings → Developer settings → Fine-grained
-tokens → only this repository → Repository permissions → **Contents: Read and write**), paste it and the repository
-name into Settings, then **Encrypt & push to GitHub**. Repeat the push whenever you add transactions.
+For immediate proof, run the workflow with the command `report daily`: the report that arrives lists your holdings.
 
-Set the same passphrase as the `PORTFOLIO_PASSPHRASE` secret.
+Repeat steps 4 and 5 whenever you add transactions or change a target or stop price.
+
+*One-click alternative to steps 4 and 5:* create a fine-grained personal access token (GitHub → Settings →
+Developer settings → Fine-grained tokens → only this repository → Repository permissions → **Contents: Read and
+write**), paste it and the repository name into Settings, then use **Encrypt & push to GitHub**.
 
 ## 7. Verify
 

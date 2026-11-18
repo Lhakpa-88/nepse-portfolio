@@ -136,6 +136,20 @@ class EncryptionTest(unittest.TestCase):
         with self.assertRaises(Exception):
             secure_store.decrypt_blob(blob, "wrong passphrase")
 
+    def test_file_encrypted_by_the_dashboard_decrypts_in_the_pipeline(self):
+        """The cross-language contract: the same DEMO fixture is decrypted by frontend/src/lib/crypto.test.ts."""
+        try:
+            import cryptography  # noqa: F401
+        except ImportError:
+            self.skipTest("cryptography not installed")
+        fx = json.loads((ROOT / "tests" / "fixtures" / "encrypted_demo.json").read_text(encoding="utf-8"))
+        self.assertEqual(fx["fromBrowser"]["iter"], 600000)
+        for side in ("fromBrowser", "fromPipeline"):
+            with self.subTest(encrypted_by=side):
+                self.assertEqual(secure_store.decrypt_blob(fx[side], fx["passphrase"]), fx["plain"])
+                with self.assertRaises(Exception):
+                    secure_store.decrypt_blob(fx[side], fx["passphrase"] + " ")
+
 
 class NewsTest(unittest.TestCase):
     COMPANIES = {"NABIL": {"name": "Nabil Bank Limited", "sector": "Commercial Banks"}}
@@ -266,10 +280,49 @@ class PublicLogTest(unittest.TestCase):
         self.d = Path(self.tmp.name)
         write_market(self.d)
         run_pipeline.ERRORS.clear()
+        run_pipeline.NOTED.clear()
 
     def tearDown(self):
         self.tmp.cleanup()
         run_pipeline.ERRORS.clear()
+        run_pipeline.NOTED.clear()
+
+    GMAIL = {"SMTP_USER": "someone@gmail.com", "SMTP_PASSWORD": "abcdefghijklmnop"}
+
+    def test_run_page_says_whether_the_portfolio_was_loaded_and_what_was_delivered(self):
+        with clean_env(GITHUB_ACTIONS="true", PORTFOLIO_JSON=DEMO_TEXT, **self.GMAIL), \
+                mock.patch.object(telegram.smtplib, "SMTP_SSL") as smtp:
+            out = self.captured(lambda: (run_pipeline.do_alerts(self.d, False), run_pipeline.do_report("daily", self.d, False)))
+        self.assertEqual(out.count("::notice title=Your portfolio was loaded::"), 1)       # once per run, not per stage
+        self.assertRegex(out, r"::notice title=Alerts::\d+ delivered")
+        self.assertIn("::notice title=The daily report was delivered::It includes your holdings.", out)
+        self.assertGreaterEqual(smtp.call_count, 2)                                         # alerts and the report were emailed
+        for marker in PRIVATE_MARKERS + ("someone@gmail.com", "abcdefghijklmnop"):
+            self.assertNotIn(marker, out)
+        self.assertEqual(run_pipeline.ERRORS, [])
+
+    def test_run_page_explains_a_portfolio_that_could_not_be_decrypted(self):
+        try:
+            import cryptography  # noqa: F401
+        except ImportError:
+            self.skipTest("cryptography not installed")
+        path = self.d / "portfolio.enc.json"
+        path.write_text(json.dumps(secure_store.encrypt_blob(json.loads(DEMO_TEXT), "the right passphrase", 1000)))
+        with mock.patch.object(secure_store, "ENC_PATH", path), clean_env(GITHUB_ACTIONS="true", PORTFOLIO_PASSPHRASE="a wrong one"):
+            out = self.captured(lambda: run_pipeline.do_alerts(self.d, False))
+        self.assertIn("::warning title=Your portfolio was NOT loaded::", out)
+        self.assertIn("could not be decrypted", out)
+        for marker in PRIVATE_MARKERS + ("a wrong one", "the right passphrase"):
+            self.assertNotIn(marker, out)
+
+    def test_no_run_page_annotations_outside_ci_or_without_a_portfolio(self):
+        with clean_env(PORTFOLIO_JSON=DEMO_TEXT):                       # local run
+            out = self.captured(lambda: run_pipeline.do_alerts(self.d, True))
+        self.assertNotIn("::notice", out)
+        run_pipeline.NOTED.clear()
+        with clean_env(GITHUB_ACTIONS="true"):                          # CI, market-only: nothing to say
+            out = self.captured(lambda: run_pipeline.do_alerts(self.d, False))
+        self.assertNotIn("portfolio was", out)
 
     def captured(self, fn) -> str:
         buf = io.StringIO()

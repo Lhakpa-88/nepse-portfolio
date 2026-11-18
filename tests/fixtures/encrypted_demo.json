@@ -1,0 +1,45 @@
+{
+  "_note": "DEMO data. Proves that a portfolio file encrypted by the dashboard (browser WebCrypto, frontend/src/lib/crypto.ts) can be decrypted by the pipeline (backend/secure_store.py) and the other way round. Both test suites decrypt both blobs. The passphrase protects nothing real.",
+  "passphrase": "DEMO passphrase - protects nothing",
+  "plain": {
+    "version": 1,
+    "demo": true,
+    "transactions": [
+      {
+        "id": "x1",
+        "date": "2026-01-11",
+        "symbol": "DEMO",
+        "type": "BUY",
+        "qty": 10,
+        "price": 100.5,
+        "notes": "DEMO – नमस्ते (non-ASCII text must survive)"
+      }
+    ],
+    "watchlist": [],
+    "plans": {
+      "DEMO": {
+        "target": 150,
+        "stop": 90
+      }
+    }
+  },
+  "fromPipeline": {
+    "v": 1,
+    "kdf": "PBKDF2-SHA256",
+    "iter": 600000,
+    "cipher": "AES-256-GCM",
+    "salt": "q6tF3EUBG2ZHviKV6v0UWg==",
+    "iv": "5co6h2o6FpMwY3To",
+    "ct": "5pYRvYC9ZUtFSJ+3BdOXrVSsPokMfZXrv0fKGN13PhF4x5pBsVxWlzwB6SHUz4Iog4e1tcP4gzcj3IgiUugatwFL0x4cRdLUwLmsF6g69J/Dcy4iVn+OI6Cr0DuunSSxNctsp51z1xuQa/XJ2O5YCvEAVZLStHRSd+G/xIX3mIknEqlhwyij0rmH6Thw3yTzfElNs44CjcnTjwYV7HVdN9NgtXBHYoequOh9Hg5kXS7fUf7XJTDGOA9YT0X8g+9RmGObu6mYsMDqOmIdPKGDHFitArezMJhIcIsAtc58chvgyFBYFhOhTca4K5EIZcQfg66CuDI0wcmxZq9+muQGgyj2CktWrwjiQldS5AjBWX7YViAqe2RLNUuvGf/8LsEppqO2GGFs3ArYRkTTMXfxAckMv5YiqflzCic="
+  },
+  "fromBrowser": {
+    "v": 1,
+    "kdf": "PBKDF2-SHA256",
+    "iter": 600000,
+    "cipher": "AES-256-GCM",
+    "salt": "vImK6Qsl2HXsaoEPXCfn4g==",
+    "iv": "K0O+yxIJ12ZXdufC",
+    "ct": "QWkWKbEWBv2WVSNOjQuRNd1NGlTeqVIQU4Kz9MC4E/sIyFYMGVBzvTU6Kcu22T1J5Fy0mapFD8ES0IWLRkjUHwhLZTghnTlGzgwtEJnzWoXJ27s3B2gA+LcKaAgpRxmEY8vVcm83CHyJZqdV6RqlyU61nFqHwJqfSUSA2NHK+Yt1oARw4pX0XSJTyCY8P593dPk83XGLuz6maGRdDdnwV6FzyULdou6CTQHFtwxPolXWX08nxQ7ZH6peUd+nEddBTHS/UHs3kkefhylYDiQSuSHvq3iudFgrOecjowOITpv+449BRmWN/OP7sCP8IvLeUZRy93mBdadLbQKapi2bmWs1xQlQWw3KzFHB",
+    "updatedAt": "2026-11-18T05:32:28.523Z"
+  }
+}

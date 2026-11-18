@@ -73,8 +73,8 @@ npm run dev            # http://localhost:5173
 
 ```bash
 # tests
-python -m unittest discover -s tests -t . -v     # 44 tests
-cd frontend && npm test                          # 7 tests
+python -m unittest discover -s tests -t . -v     # 48 tests
+cd frontend && npm test                          # 12 tests
 ```
 
 Useful pipeline commands (`python -m scripts.run_pipeline --help`):

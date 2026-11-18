@@ -57,6 +57,8 @@ access proxy such as Cloudflare Access.
 * Done in your browser with the Web Crypto API (`frontend/src/lib/crypto.ts`); decrypted in the pipeline with the
   Python `cryptography` package (`backend/secure_store.py`).
 * Tampering is detected (authenticated encryption). A wrong passphrase fails cleanly.
+* Both test suites decrypt the same committed DEMO file, one blob encrypted by each side, so a change in the
+  dashboard or in the pipeline cannot silently break the sync between them.
 
 The file is only as strong as the passphrase. On a public repository anyone can copy it and try guesses offline,
 so use a long random passphrase (five or more random words). **If you forget it the file cannot be recovered** —

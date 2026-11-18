@@ -71,10 +71,26 @@ def subject_of(text: str) -> str:
     return " - ".join(parts)[:120]
 
 
+NOTED: set[str] = set()
+
+
+def note_portfolio(portfolio, how: str) -> None:
+    """Says once, on the run page, whether the private portfolio could be used - never anything about its content."""
+    if "portfolio" in NOTED or not secure_store.logs_are_public():
+        return
+    NOTED.add("portfolio")
+    if portfolio is not None:
+        annotate("notice", "Your portfolio was loaded",
+                 f"This run used your holdings (source - {how}), so its alerts and reports are position-aware.")
+    elif "no portfolio configured" not in how:
+        annotate("warning", "Your portfolio was NOT loaded", f"{how}. This run used market data only.")
+
+
 def do_alerts(out: Path, dry: bool):
     portfolio, how = secure_store.load_portfolio()
     private = portfolio is not None
     print(f"[alerts] portfolio source: {how}")
+    note_portfolio(portfolio, how)
     ctx = alert_mod.build_context(portfolio, out)
     found = alert_mod.generate(ctx)
     if dry:
@@ -99,12 +115,18 @@ def do_alerts(out: Path, dry: bool):
           + (f", {len(failed)} NOT delivered ({'; '.join(sorted(reasons))}) - they will be retried" if failed else ""))
     if any("not configured" not in r for r in reasons):
         ERRORS.append("alert delivery")       # a configured channel is failing: make the run visibly fail
+    if (sent or failed) and secure_store.logs_are_public():
+        repeats = len(found) - len(sent) - len(failed)
+        annotate("notice", "Alerts", f"{len(sent)} delivered"
+                 + (f" and {len(failed)} could not be delivered ({'; '.join(sorted(reasons))})" if failed else "")
+                 + (f". {repeats} more were sent recently and are not repeated yet" if repeats > 0 else "") + ".")
     return ctx, sent
 
 
 def do_report(kind: str, out: Path, dry: bool, sent=None):
-    portfolio, _ = secure_store.load_portfolio()
+    portfolio, how = secure_store.load_portfolio()
     private = portfolio is not None
+    note_portfolio(portfolio, how)
     ctx = alert_mod.build_context(portfolio, out)
     text = report_mod.build(kind, ctx, out, sent)
     summary = report_mod.narrative(text)
@@ -117,6 +139,9 @@ def do_report(kind: str, out: Path, dry: bool, sent=None):
     print(f"[{kind} report] " + ("delivered" if res["delivered"] else f"NOT delivered ({res['reason']})"))
     if not res["delivered"] and "not configured" not in (res["reason"] or ""):
         ERRORS.append(f"{kind} report delivery")
+    if res["delivered"] and secure_store.logs_are_public():
+        annotate("notice", f"The {kind} report was delivered",
+                 "It includes your holdings." if private else "It is a market-only report because no portfolio was loaded.")
 
 
 def annotate(level: str, title: str, message: str) -> None:
