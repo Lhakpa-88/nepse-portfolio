@@ -1,27 +1,20 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import defaultFees from '../../../config/fees.json';
 import defaultScoring from '../../../config/scoring.json';
-import { Badge, Banner, Card, Field } from '../components/ui';
-import { decryptJson, encryptJson } from '../lib/crypto';
+import { SyncCard } from '../components/SyncCard';
+import { Badge, Card, Field } from '../components/ui';
 import { useMarket } from '../lib/data';
 import { DEMO_PLANS, DEMO_TXNS, DEMO_WATCH } from '../lib/demo';
 import type { Fees } from '../lib/engine';
-import { download, fmtTime, todayNPT } from '../lib/format';
-import { exportable, uid, useStore, type Settings as S } from '../lib/store';
-
-const b64utf8 = (s: string) => btoa(unescape(encodeURIComponent(s)));
+import { fmtTime } from '../lib/format';
+import { uid, useStore, type Settings as S } from '../lib/store';
 
 export default function Settings() {
-  const { state, updateSettings, replaceAll, reset, setState } = useStore();
+  const { state, updateSettings, reset, setState } = useStore();
   const m = useMarket();
   const s = state.settings;
   const [feesText, setFeesText] = useState(JSON.stringify(s.fees, null, 2));
   const [feesMsg, setFeesMsg] = useState<{ ok: boolean; text: string } | null>(null);
-  const [pass, setPass] = useState('');
-  const [msg, setMsg] = useState<{ level: 'ok' | 'bad' | 'info'; text: string } | null>(null);
-  const [busy, setBusy] = useState(false);
-  const fileEnc = useRef<HTMLInputElement>(null);
-  const filePlain = useRef<HTMLInputElement>(null);
   const wsum = Object.values(s.weights).reduce((a, b) => a + b, 0);
   const setW = (k: keyof S['weights'], v: number) => updateSettings({ weights: { ...s.weights, [k]: v } });
 
@@ -39,40 +32,13 @@ export default function Settings() {
     } catch (e) { setFeesMsg({ ok: false, text: `Not saved: ${(e as Error).message}` }); }
   };
 
-  const applyImport = (data: any, note: string) => {
-    if (!data || !Array.isArray(data.transactions)) throw new Error('File does not contain a portfolio backup');
-    replaceAll({ transactions: data.transactions, watchlist: data.watchlist ?? [], plans: data.plans ?? {}, demo: !!data.demo, audit: data.audit, settings: data.settings }, note);
-  };
-  const needPass = () => { if (pass.length < 12) { setMsg({ level: 'bad', text: 'Use a passphrase of at least 12 characters. It is the only thing protecting the encrypted file.' }); return false; } return true; };
-  const run = async (fn: () => Promise<string>) => { setBusy(true); try { setMsg({ level: 'ok', text: await fn() }); } catch (e) { setMsg({ level: 'bad', text: (e as Error).message }); } setBusy(false); };
-
-  const gh = async (method: 'GET' | 'PUT', body?: unknown) => {
-    const { repo, branch, path, token } = s.sync;
-    if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) throw new Error('Repository must look like owner/name');
-    const url = `https://api.github.com/repos/${repo}/contents/${path}${method === 'GET' ? `?ref=${encodeURIComponent(branch)}` : ''}`;
-    const r = await fetch(url, { method, headers: { Accept: 'application/vnd.github+json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: body ? JSON.stringify(body) : undefined });
-    if (r.status === 404 && method === 'GET') return null;
-    if (!r.ok) throw new Error(`GitHub ${method} failed (${r.status}). Check repository, branch and that the token has Contents read/write access to this one repository.`);
-    return r.json();
-  };
-  const push = () => needPass() && run(async () => {
-    if (!s.sync.token) throw new Error('A GitHub token is required to push.');
-    const blob = await encryptJson(exportable(state), pass);
-    const existing = await gh('GET');
-    await gh('PUT', { message: 'Update encrypted portfolio', content: b64utf8(JSON.stringify(blob)), branch: s.sync.branch, sha: existing?.sha });
-    return `Encrypted portfolio pushed to ${s.sync.repo}/${s.sync.path}. The automated alerts will use it from the next run.`;
-  });
-  const pull = () => needPass() && run(async () => {
-    const f = await gh('GET');
-    if (!f) throw new Error('No encrypted file found in the repository yet.');
-    applyImport(await decryptJson(JSON.parse(decodeURIComponent(escape(atob(f.content.replace(/\n/g, ''))))), pass), 'Pulled encrypted portfolio from GitHub');
-    return 'Portfolio pulled from GitHub and decrypted.';
-  });
-
   return (
     <>
       <h1 className="text-lg font-semibold">Settings</h1>
-      <div className="grid gap-4 xl:grid-cols-2">
+      {/* grid-cols-1: a column that cannot be stretched, so a wide table scrolls inside its card instead of widening every card on a phone */}
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <SyncCard />
+
         <Card title="Accounting & portfolio rules">
           <div className="grid grid-cols-2 gap-3">
             <Field label="Cost-basis method" hint="Weighted average matches MeroShare / broker practice.">
@@ -93,7 +59,7 @@ export default function Settings() {
               <Field key={k} label={k === 'market' ? 'Market & sector' : k}><input className="input" type="number" min={0} max={100} value={s.weights[k]} onChange={(e) => setW(k, Number(e.target.value))} /></Field>))}
           </div>
           <div className={`mt-2 text-sm ${wsum === 100 ? 'text-mute' : 'text-warn'}`}>Total: {wsum}%{wsum !== 100 && ' — weights are normalised automatically, but 100 keeps them easy to read.'}</div>
-          <div className="mt-1 text-xs text-mute">Applies instantly to scores and signals in this dashboard. The automated Telegram alerts use config/scoring.json in the repository.</div>
+          <div className="mt-1 text-xs text-mute">Applies instantly to scores and signals in this dashboard. The automated alerts and reports use config/scoring.json in the repository.</div>
         </Card>
 
         <Card title="Transaction charges & tax (effective-date schedule)" right={<span className="flex gap-2"><button className="btn !py-0.5" onClick={() => { setFeesText(JSON.stringify(defaultFees, null, 2)); updateSettings({ fees: structuredClone(defaultFees) as unknown as Fees, feesCustomised: false }); setFeesMsg({ ok: true, text: 'Restored the shipped schedule.' }); }}>Reset</button><button className="btn btn-primary !py-0.5" onClick={saveFees}>Save</button></span>}>
@@ -114,51 +80,17 @@ export default function Settings() {
                 <span>Reliability: <Badge kind={m.status.reliability === 'cross-verified' ? 'Low' : m.status.reliability === 'unverified' ? 'Medium' : 'High'}>{m.status.reliability}</Badge></span>
                 <span className="text-mute">Last run {fmtTime(m.status.generatedAt)}</span>
               </div>
+              <div className="overflow-x-auto">
               <table className="w-full text-xs"><thead><tr className="border-b border-line"><th className="th">Data</th><th className="th">Primary → fallback</th><th className="th">Used now</th><th className="th">Last success</th><th className="th">Detail</th></tr></thead>
                 <tbody>{Object.entries(m.status.chain).map(([cap, chain]) => { const c = m.status!.capabilities[cap]; return (
                   <tr key={cap} className="border-b border-line/50"><td className="td font-medium">{cap}</td><td className="td">{chain.join(' → ')}</td>
                     <td className="td">{c ? (c.ok ? <span className="text-up">{c.source}{c.role && c.role !== 'primary' ? ` (${c.role})` : ''}</span> : <span className="text-down">failed</span>) : <span className="text-mute">not run</span>}</td>
                     <td className="td">{fmtTime(m.status!.lastSuccess[cap])}</td>
                     <td className="td !whitespace-normal text-mute">{cap === 'prices' && c?.crossCheck?.against ? `${c.rows} symbols; ${c.crossCheck.mismatches}/${c.crossCheck.compared} differ >1% vs ${c.crossCheck.against}` : cap === 'fundamentals' && c ? `${c.covered}/${c.universe} companies covered` : cap === 'history' && c ? `${c.appended} updated, ${c.bootstrapped} loaded, ${c.failed} failed` : (c?.errors ?? []).join('; ').slice(0, 80)}</td></tr>); })}</tbody></table>
+              </div>
               <div className="mt-2 text-xs text-mute">{m.status.disclaimer} The official NEPSE site (nepalstock.com) does not offer anonymous API access. Change the order in config/sources.json.</div>
             </>
           )}
-        </Card>
-
-        <Card title="Privacy, backup & encrypted sync" className="xl:col-span-2">
-          <div className="grid gap-4 lg:grid-cols-2">
-            <div className="space-y-3">
-              <p className="text-sm text-mute">Your transactions never leave this browser unless you export them. The public GitHub Pages site contains market data only. To use the dashboard on another device, or to let the automated Telegram alerts see your holdings, sync an <b className="text-ink">encrypted</b> copy (AES-256-GCM, key derived from your passphrase with PBKDF2 600,000 rounds).</p>
-              <Field label="Encryption passphrase" hint="Not stored anywhere. Must match the PORTFOLIO_PASSPHRASE GitHub secret. If you lose it the encrypted file cannot be recovered.">
-                <input className="input" type="password" autoComplete="new-password" value={pass} onChange={(e) => setPass(e.target.value)} placeholder="at least 12 characters" /></Field>
-              <div className="flex flex-wrap gap-2">
-                <button className="btn" disabled={busy} onClick={() => needPass() && run(async () => { download('portfolio.enc.json', JSON.stringify(await encryptJson(exportable(state), pass)), 'application/json'); return 'Encrypted file downloaded. Commit it to data/private/portfolio.enc.json in your repository.'; })}>Download encrypted file</button>
-                <button className="btn" disabled={busy} onClick={() => fileEnc.current?.click()}>Open encrypted file…</button>
-                <input ref={fileEnc} type="file" accept=".json" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f && needPass()) run(async () => { applyImport(await decryptJson(JSON.parse(await f.text()), pass), 'Imported encrypted backup file'); return 'Encrypted backup decrypted and loaded.'; }); e.target.value = ''; }} />
-              </div>
-              <div className="flex flex-wrap gap-2 border-t border-line pt-3">
-                <button className="btn" onClick={() => download(`portfolio-backup-${todayNPT()}.json`, JSON.stringify(exportable(state), null, 2), 'application/json')}>Download plain backup (unencrypted)</button>
-                <button className="btn" onClick={() => filePlain.current?.click()}>Restore plain backup…</button>
-                <input ref={filePlain} type="file" accept=".json" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) run(async () => { applyImport(JSON.parse(await f.text()), 'Restored plain backup file'); return 'Backup restored.'; }); e.target.value = ''; }} />
-              </div>
-              <div className="text-xs text-mute">Keep plain backups off GitHub. The repository's .gitignore blocks portfolio-backup-*.json for that reason.</div>
-            </div>
-            <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="GitHub repository" hint="owner/name"><input className="input" value={s.sync.repo} placeholder="yourname/nepse-portfolio" onChange={(e) => updateSettings({ sync: { ...s.sync, repo: e.target.value.trim() } })} /></Field>
-                <Field label="Branch"><input className="input" value={s.sync.branch} onChange={(e) => updateSettings({ sync: { ...s.sync, branch: e.target.value.trim() } })} /></Field>
-                <Field label="File path"><input className="input" value={s.sync.path} onChange={(e) => updateSettings({ sync: { ...s.sync, path: e.target.value.trim() } })} /></Field>
-                <Field label="GitHub token (optional)" hint="Fine-grained token limited to this repo, Contents: read & write. Stored in this browser only.">
-                  <input className="input" type="password" autoComplete="off" value={s.sync.token} onChange={(e) => updateSettings({ sync: { ...s.sync, token: e.target.value.trim() } })} /></Field>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <button className="btn btn-primary" disabled={busy} onClick={push}>Encrypt & push to GitHub</button>
-                <button className="btn" disabled={busy} onClick={pull}>Pull & decrypt from GitHub</button>
-              </div>
-              <div className="text-xs text-mute">Without a token, use "Download encrypted file" and upload it to the repository yourself. Pull works without a token on a public repository.</div>
-            </div>
-          </div>
-          {msg && <div className="mt-3"><Banner level={msg.level}>{msg.text}</Banner></div>}
         </Card>
 
         <Card title="AI assistant (optional Claude API key)">
@@ -174,7 +106,7 @@ export default function Settings() {
           <ul className="mt-2 list-disc space-y-1 pl-5 text-sm">
             <li><code>TELEGRAM_BOT_TOKEN</code> and <code>TELEGRAM_CHAT_ID</code> — Telegram (check the app works on your connection: it is blocked by internet providers in Nepal)</li>
             <li><code>SMTP_USER</code> and <code>SMTP_PASSWORD</code> — email, instead of or as well as Telegram (Gmail: your address and an app password)</li>
-            <li><code>PORTFOLIO_PASSPHRASE</code> — the passphrase used above, so the pipeline can read your encrypted holdings</li>
+            <li><code>PORTFOLIO_PASSPHRASE</code> — the passphrase from the first card on this page, so the pipeline can read your encrypted holdings</li>
             <li><code>ANTHROPIC_API_KEY</code> — optional, adds a short AI-written summary to the daily report</li>
           </ul>
           <p className="mt-2 text-xs text-mute">Thresholds (day move %, loss %, concentration, cooldown, max alerts per run) live in config/alerts.json. Per-stock target and stop-loss prices are set on the My Portfolio page and travel inside the encrypted file.</p>

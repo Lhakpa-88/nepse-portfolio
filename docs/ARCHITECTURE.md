@@ -24,7 +24,7 @@ backend/portfolio.py          accounting engine (Python)
 backend/secure_store.py       decrypts the private portfolio from secrets
 notifications/alerts.py       alert rules, cooldown, cap
 notifications/telegram.py     Telegram + optional SMTP
-ai_engine/report.py           pre-market, daily, weekly, monthly reports (+ optional Claude summary)
+ai_engine/report.py           morning brief, daily, weekly, monthly reports (+ optional Claude summary)
 scripts/run_pipeline.py       single entry point; `auto` selects the job from the Nepal clock
 
 frontend/src/lib/engine.ts    accounting engine (TypeScript) – same fixtures as the Python one
@@ -69,7 +69,7 @@ GitHub cron → `scripts/run_pipeline.py auto` → the script reads the Nepal cl
 
 | Session | Stages |
 |---------|--------|
-| Before open | news → prices → pre-market brief |
+| Before open | news → prices → morning brief |
 | Open | prices → analysis → news → alerts |
 | After close (before 17:00) | prices + fundamentals → analysis → news → alerts |
 | Evening | the same, then the daily report |

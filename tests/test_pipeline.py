@@ -11,7 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from unittest import mock
 
-from ai_engine import news
+from ai_engine import news, report
 from analytics import build
 from analytics import scoring as sc
 from analytics import technicals as ta
@@ -315,6 +315,26 @@ class PublicLogTest(unittest.TestCase):
         self.assertIn("could not be decrypted", out)
         for marker in PRIVATE_MARKERS + ("a wrong one", "the right passphrase"):
             self.assertNotIn(marker, out)
+
+    def test_a_readable_file_where_the_encrypted_one_belongs_fails_the_run(self):
+        """A plain backup uploaded by mistake is public. It must not pass as 'wrong passphrase' or go unnoticed."""
+        path = self.d / "portfolio.enc.json"
+        for content in (DEMO_TEXT, "symbol,qty,price\nNABIL,315,484.68\n", "{}"):
+            with self.subTest(content=content[:14]):
+                path.write_text(content, encoding="utf-8")
+                for env in ({}, {"PORTFOLIO_PASSPHRASE": "five random words here"}, {"PORTFOLIO_JSON": DEMO_TEXT}):
+                    with mock.patch.object(secure_store, "ENC_PATH", path), clean_env(**env):
+                        self.assertEqual(secure_store.load_portfolio(), (None, secure_store.NOT_ENCRYPTED))
+                run_pipeline.NOTED.clear()
+                run_pipeline.ERRORS.clear()
+                with mock.patch.object(secure_store, "ENC_PATH", path), clean_env(GITHUB_ACTIONS="true"):
+                    out = self.captured(lambda: run_pipeline.do_alerts(self.d, False))
+                self.assertIn("::error title=The file in data/private is not encrypted::", out)
+                self.assertEqual(run_pipeline.ERRORS, ["portfolio file"])           # the run ends red
+                for marker in PRIVATE_MARKERS:
+                    self.assertNotIn(marker, out)                                    # ...without repeating what is in the file
+        run_pipeline.NOTED.clear()
+        run_pipeline.ERRORS.clear()
 
     def test_no_run_page_annotations_outside_ci_or_without_a_portfolio(self):
         with clean_env(PORTFOLIO_JSON=DEMO_TEXT):                       # local run
@@ -695,6 +715,14 @@ class ScheduleRobustnessTest(unittest.TestCase):
         self.assertEqual(self.reports_for("2026-11-18T11:26"), ["premarket"])      # what actually happened on day one
         self.assertEqual(self.reports_for("2026-11-18T11:56"), [])
         self.assertEqual(self.reports_for("2026-11-19T14:10"), [])                 # too late in the day to call it a morning brief
+
+    def test_the_morning_brief_does_not_claim_to_be_pre_market(self):
+        # on day one it arrived at 11:55, almost an hour after the open, headed "PRE-MARKET BRIEF"
+        ctx = {"status": {}, "prices": {"marketDate": "2026-11-18"}, "analysis": {}, "portfolio": None, "news": {}}
+        text = report.build("premarket", ctx, self.d)
+        self.assertEqual(text.splitlines()[0], "NEPSE MORNING BRIEF")
+        self.assertNotIn("PRE-MARKET", text.upper())
+        self.assertEqual(run_pipeline.subject_of(text), "NEPSE MORNING BRIEF")     # the email subject follows the heading
 
     def test_an_undelivered_or_dry_run_report_is_tried_again(self):
         self.assertEqual(self.reports_for("2026-11-18T18:05", delivered=False), ["daily"])

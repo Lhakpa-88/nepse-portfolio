@@ -55,7 +55,7 @@ export default function Risk() {
         <ul className="list-disc space-y-1 pl-5 text-sm">{r.suggestions.map((s) => <li key={s}>{s}</li>)}</ul>
       </Card>
 
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <Card title="Individual stock concentration">
           <div className="h-64">
             <ResponsiveContainer>
@@ -86,6 +86,7 @@ export default function Risk() {
 
         <Card title="Benchmark comparison">
           {series.length < 2 ? <Empty>Not enough history to benchmark.</Empty> : (
+            <div className="overflow-x-auto">
             <table className="w-full">
               <thead><tr className="border-b border-line"><th className="th">Since {series[0].date}</th><th className="th text-right">Return</th><th className="th text-right">vs my portfolio</th></tr></thead>
               <tbody className="num">
@@ -95,6 +96,7 @@ export default function Risk() {
                 {sectorBench.map((s) => <tr key={s.sector} className="border-b border-line/50"><td className="td">{s.sector} sector (avg of members, last 1 month)</td><td className={`td text-right ${tone(s.avgRet1m)}`}>{pct(s.avgRet1m)}</td><td className="td text-right text-xs text-mute">1-month only</td></tr>)}
               </tbody>
             </table>
+            </div>
           )}
           <div className="mt-2 text-xs text-mute">Time-weighted return strips out the timing of your deposits and withdrawals so it is comparable with an index. Sector index history is not available from the free sources, so sector rows show the average 1-month move of each sector's stocks.</div>
         </Card>
@@ -123,8 +125,10 @@ export default function Risk() {
           )}
         </Card>
         <Card title="Liquidity analysis">
+          <div className="overflow-x-auto">
           <table className="w-full"><thead><tr className="border-b border-line"><th className="th">Stock</th><th className="th text-right">Position value</th><th className="th text-right">Avg daily turnover (20d)</th><th className="th text-right">Days to exit*</th></tr></thead>
             <tbody className="num">{r.liquidity.map((l) => <tr key={l.symbol} className="border-b border-line/50"><td className="td">{l.symbol}</td><td className="td text-right">{npr(l.value)}</td><td className="td text-right">{compact(l.avgTurnover)}</td><td className={`td text-right ${l.daysToExit !== null && l.daysToExit > 5 ? 'text-warn' : ''}`}>{l.daysToExit === null ? 'n/a' : l.daysToExit < 1 ? '< 1' : l.daysToExit.toFixed(1)}</td></tr>)}</tbody></table>
+          </div>
           <div className="mt-2 text-xs text-mute">* Trading days needed to sell the whole position if you are at most 10% of the stock's average daily turnover.</div>
         </Card>
       </div>

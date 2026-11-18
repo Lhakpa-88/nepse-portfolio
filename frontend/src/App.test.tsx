@@ -6,12 +6,15 @@
  * Why these exist: the first release crashed to a blank page when any stock was opened, because one score
  * block had no `notes` list. Reading page text had not caught it - only rendering the view does.
  */
+import { webcrypto } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve, sep } from 'node:path';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
+import { repoFromLocation } from './components/SyncCard';
 import { ErrorBoundary } from './components/ui';
+import { decryptJson, encryptJson } from './lib/crypto';
 import { DEMO_PLANS, DEMO_TXNS, DEMO_WATCH } from './lib/demo';
 
 // (in the jsdom environment import.meta.url is an http address, so resolve from the test file's folder instead)
@@ -26,9 +29,39 @@ const ROUTES: [string, RegExp][] = [
 let problems: string[] = [];
 /** simulate data published by an older pipeline version: score blocks without their optional lists */
 let legacyData = true;
+/** A stand-in for GitHub: what the repository holds at the sync address, and how GitHub is behaving. */
+const github = {
+  file: null as string | null,                       // text of data/private/portfolio.enc.json; null = not uploaded yet
+  rawFile: undefined as string | null | undefined,   // what the cached plain address serves; undefined = the same as `file`
+  repoVisible: true,                                 // false = the name is wrong, or the repository is private
+  apiDown: false,                                    // true = GitHub's hourly limit for this network is used up
+  calls: [] as { method: string; url: string; auth: string; body?: any }[],
+};
+const reply = (status: number, body = '', headers: Record<string, string> = {}) => ({
+  ok: status >= 200 && status < 300, status, headers: { get: (h: string) => headers[h.toLowerCase()] ?? null },
+  text: async () => body, json: async () => JSON.parse(body),
+});
+function githubReply(url: string, init: { method?: string; headers?: Record<string, string>; body?: string } = {}) {
+  const method = init.method ?? 'GET';
+  github.calls.push({ method, url, auth: init.headers?.Authorization ?? '', body: init.body ? JSON.parse(init.body) : undefined });
+  if (url.startsWith('https://raw.githubusercontent.com/')) {
+    const text = github.rawFile === undefined ? github.file : github.rawFile;
+    return text === null ? reply(404) : reply(200, text);
+  }
+  if (github.apiDown) return reply(403, '', { 'x-ratelimit-remaining': '0' });
+  if (!github.repoVisible) return reply(404);
+  if (!url.includes('/contents/')) return reply(200, '{}');                                  // "is there such a repository?"
+  if (method === 'PUT') {
+    github.file = decodeURIComponent(escape(atob(JSON.parse(init.body!).content)));
+    return reply(200, '{}');
+  }
+  if (github.file === null) return reply(404);
+  return init.headers?.Accept?.includes('raw') ? reply(200, github.file) : reply(200, JSON.stringify({ sha: 'abc123', content: '' }));
+}
 
 beforeAll(() => {
-  vi.stubGlobal('fetch', vi.fn(async (input: unknown) => {
+  vi.stubGlobal('fetch', vi.fn(async (input: unknown, init?: any) => {
+    if (/^https:\/\/[a-z.]*github/.test(String(input))) return githubReply(String(input), init);
     const m = String(input).match(/data\/([^?]+)/);
     const file = m ? DATA + m[1] : '';
     if (!file || !existsSync(file)) return { ok: false, status: 404, json: async () => null };
@@ -39,6 +72,16 @@ beforeAll(() => {
     return { ok: true, status: 200, json: async () => body };
   }));
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
+  if (!Blob.prototype.text) {                                 // browsers can read a chosen file as text; jsdom cannot yet
+    Blob.prototype.text = function text(this: Blob) {
+      return new Promise<string>((done, fail) => {
+        const reader = new FileReader();
+        reader.onload = () => done(String(reader.result));
+        reader.onerror = () => fail(reader.error);
+        reader.readAsText(this);
+      });
+    };
+  }
   Element.prototype.scrollIntoView = () => undefined;
 });
 
@@ -287,6 +330,253 @@ describe('the remaining controls', () => {
     fireEvent.click(screen.getByTitle('Toggle light/dark'));
     await waitFor(() => expect(document.documentElement.classList.contains('dark')).toBe(!dark));
     expectHealthy();
+  });
+});
+
+describe('sending holdings to the pipeline (Settings)', () => {
+  const PASS = 'five random words here';
+  const SYNC = { repo: 'someone/nepse-portfolio', branch: 'main', path: 'data/private/portfolio.enc.json', token: '' };
+  const FILE_API = 'https://api.github.com/repos/someone/nepse-portfolio/contents/data/private/portfolio.enc.json';
+  const WAIT = { timeout: 4000 };                           // the GitHub check waits for a pause in typing first
+  const SLOW = { timeout: 8000 };                           // deriving a key takes a moment, by design
+  const stored = () => JSON.parse(localStorage.getItem(KEY)!);
+  const saveState = (patch: Record<string, unknown>) => localStorage.setItem(KEY, JSON.stringify({
+    version: 1, demo: false, audit: [], plans: {}, transactions: [], watchlist: [], ...JSON.parse(localStorage.getItem(KEY) ?? '{}'), ...patch,
+  }));
+  const withRepo = (token = '') => saveState({ settings: { sync: { ...SYNC, token } } });
+  /** something with the shape of the dashboard's encrypted file */
+  const encryptedFile = (updatedAt: string) => JSON.stringify({ v: 1, kdf: 'PBKDF2-SHA256', iter: 600000, cipher: 'AES-256-GCM', salt: 'c2FsdA==', iv: 'aXY=', ct: 'Y3Q=', updatedAt });
+  const typePassphrase = (value: string) => fireEvent.change(screen.getByLabelText('Passphrase'), { target: { value } });
+  const button = (name: string) => screen.getByText(name) as HTMLButtonElement;
+  const href = (name: RegExp) => (screen.getByText(name).closest('a') as HTMLAnchorElement).href;
+  const pick = (label: string, text: string) => fireEvent.change(screen.getByLabelText(label), { target: { files: [new File([text], 'chosen.json', { type: 'application/json' })] } });
+
+  beforeEach(() => {
+    vi.stubGlobal('crypto', webcrypto);                     // jsdom has no SubtleCrypto; browsers and Node do
+    Object.assign(github, { file: null, rawFile: undefined, repoVisible: true, apiDown: false, calls: [] });
+  });
+
+  it('is the first thing on the Settings page', async () => {
+    await open('/settings');
+    const titles = [...document.querySelectorAll('section.card h2')].map((h) => h.textContent);
+    expect(titles[0]).toBe('Send my holdings to the alert pipeline (encrypted)');
+  });
+
+  it('says what is missing instead of looking like a dead button', async () => {
+    useDemoPortfolio();
+    await open('/settings');
+    expect(button('Download encrypted file').disabled).toBe(true);
+    expect(screen.getByText(/switch on once the passphrase in step 1 is long enough/)).toBeTruthy();
+    typePassphrase('short');
+    expect(screen.getByText('7 more characters needed (at least 12).')).toBeTruthy();
+    expect(button('Download encrypted file').disabled).toBe(true);
+    expect(button('Copy as text instead').disabled).toBe(true);
+    typePassphrase(PASS);
+    expect(screen.getByText('Long enough.')).toBeTruthy();
+    expect(button('Download encrypted file').disabled).toBe(false);
+    expect(screen.queryByText(/switch on once the passphrase/)).toBeNull();
+    fireEvent.click(screen.getByText('Show'));
+    expect((screen.getByLabelText('Passphrase') as HTMLInputElement).type).toBe('text');
+    expectHealthy();
+  });
+
+  it('copies an encrypted file that decrypts back to the portfolio, with no secrets or readable holdings in it', async () => {
+    const copied: string[] = [];
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async (t: string) => { copied.push(t); } } });
+    useDemoPortfolio();
+    withRepo();
+    await open('/settings');
+    typePassphrase(PASS);
+    fireEvent.click(button('Copy as text instead'));
+    expect(await screen.findByText('Copied. Go to step 3 and paste it.', {}, { timeout: 8000 })).toBeTruthy();   // right under the button
+    expect(copied[0]).not.toMatch(/NABIL|transactions/);
+    const back = await decryptJson(JSON.parse(copied[0]), PASS);
+    expect(back.transactions).toHaveLength(12);
+    expect(back.plans.NABIL.stop).toBe(480);
+    expect(Object.keys(back.settings)).not.toEqual(expect.arrayContaining(['ai', 'sync']));      // tokens never travel
+    await expect(decryptJson(JSON.parse(copied[0]), 'another passphrase')).rejects.toThrow();
+    expectHealthy();
+  });
+
+  it('points to the right GitHub pages and reports whether GitHub already has the file', async () => {
+    useDemoPortfolio();
+    withRepo();
+    await open('/settings');
+    expect(await screen.findByText('GitHub does not have an encrypted file yet.', {}, WAIT)).toBeTruthy();
+    expect(href(/Open the upload page/)).toBe('https://github.com/someone/nepse-portfolio/upload/main/data/private');
+    expect(href(/Open GitHub to paste/)).toBe('https://github.com/someone/nepse-portfolio/new/main/data/private?filename=portfolio.enc.json');
+    expect(href(/Add or change that secret/)).toBe('https://github.com/someone/nepse-portfolio/settings/secrets/actions/new');
+
+    github.file = encryptedFile('2026-11-18T07:00:00.000Z');
+    github.rawFile = null;                                  // the cached plain address has not caught up with the upload yet
+    fireEvent.click(screen.getByText('Check again'));
+    expect(await screen.findByText(/GitHub has your encrypted file, created 18 Nov 2026/, {}, WAIT)).toBeTruthy();
+    expect(href(/Open GitHub to paste/)).toBe('https://github.com/someone/nepse-portfolio/edit/main/data/private/portfolio.enc.json');
+    expect(github.calls.every((c) => c.auth === '')).toBe(true);                    // no token saved, none sent
+    expectHealthy();
+  });
+
+  it('does not mistake a mistyped repository, a damaged file or a busy GitHub for a missing file', async () => {
+    useDemoPortfolio();
+    withRepo();
+    github.repoVisible = false;
+    await open('/settings');
+    expect(await screen.findByText(/GitHub shows no public repository called someone\/nepse-portfolio/, {}, WAIT)).toBeTruthy();
+
+    github.repoVisible = true;
+    github.file = 'this is not what the dashboard makes';
+    fireEvent.click(screen.getByText('Check again'));
+    expect(await screen.findByText(/it is not an encrypted portfolio/, {}, WAIT)).toBeTruthy();
+    expect(href(/Open GitHub to paste/)).toBe('https://github.com/someone/nepse-portfolio/edit/main/data/private/portfolio.enc.json');   // it is there: replace it
+
+    github.file = JSON.stringify({ version: 1, transactions: DEMO_TXNS });           // a plain backup, uploaded by mistake
+    fireEvent.click(screen.getByText('Check again'));
+    expect((await screen.findByRole('alert', {}, WAIT)).textContent).toMatch(/plain backup, not an encrypted file: anyone who opens the repository can read your holdings/);
+    expect(href(/Open GitHub to paste/)).toBe('https://github.com/someone/nepse-portfolio/edit/main/data/private/portfolio.enc.json');
+
+    github.apiDown = true;
+    github.file = null;
+    fireEvent.click(screen.getByText('Check again'));
+    expect(await screen.findByText('Could not check GitHub just now.', {}, WAIT)).toBeTruthy();   // a cached "not found" proves nothing
+    expect(screen.queryByText('GitHub does not have an encrypted file yet.')).toBeNull();
+    expect(screen.getByText(/If GitHub says the file already exists, use the upload page instead/)).toBeTruthy();
+
+    github.rawFile = encryptedFile('2026-11-18T07:00:00.000Z');                     // ...but a file it does serve is real
+    fireEvent.click(screen.getByText('Check again'));
+    expect(await screen.findByText(/GitHub has your encrypted file/, {}, WAIT)).toBeTruthy();
+    expectHealthy();
+  });
+
+  it('says when this browser has changed since the file on GitHub was made, but not after loading that same file', async () => {
+    github.file = encryptedFile('2026-11-18T07:00:00.000Z');
+    useDemoPortfolio();
+    saveState({ settings: { sync: SYNC }, audit: [
+      { at: '2026-11-18T06:00:00.000Z', action: 'ADD', detail: '1 transaction(s) via form' },
+      { at: '2026-11-18T09:00:00.000Z', action: 'IMPORT', detail: 'Loaded the encrypted portfolio from GitHub' },
+    ] });
+    await open('/settings');
+    expect(await screen.findByText(/GitHub has your encrypted file/, {}, WAIT)).toBeTruthy();
+    expect(screen.queryByText(/has changed since then/)).toBeNull();
+    cleanup();
+
+    saveState({ audit: [{ at: '2026-11-18T09:00:00.000Z', action: 'ADD', detail: '1 transaction(s) via form' }] });
+    await open('/settings');
+    expect(await screen.findByText(/This browser's portfolio has changed since then/, {}, WAIT)).toBeTruthy();
+    expectHealthy();
+  });
+
+  it('keeps the repository box while a name is typed, and waits for a pause before asking GitHub', async () => {
+    useDemoPortfolio();
+    await open('/settings');                                // (not on GitHub Pages here, so the address cannot say which repository)
+    const box = screen.getByPlaceholderText('yourname/nepse-portfolio');
+    expect(screen.getByText(/links to GitHub appear here once the repository is filled in/)).toBeTruthy();
+    expect(screen.queryByText(/Open the upload page/)).toBeNull();
+    for (const value of ['s', 'someone', 'someone/', 'someone/n', 'someone/nepse-portfolio']) fireEvent.change(box, { target: { value } });
+    expect(screen.getByPlaceholderText('yourname/nepse-portfolio')).toBe(box);      // (it used to vanish after the first letter)
+    expect(href(/Open the upload page/)).toBe('https://github.com/someone/nepse-portfolio/upload/main/data/private');
+    expect(github.calls).toHaveLength(0);                                           // nothing was asked letter by letter
+    expect(await screen.findByText('GitHub does not have an encrypted file yet.', {}, WAIT)).toBeTruthy();
+    expect(github.calls.map((c) => c.url)).toEqual([`${FILE_API}?ref=main`, 'https://api.github.com/repos/someone/nepse-portfolio']);
+    expectHealthy();
+  });
+
+  it('sends with one click and loads back on another device, asking before it replaces real transactions', async () => {
+    useDemoPortfolio();
+    withRepo('test-token');
+    await open('/settings');
+    typePassphrase(PASS);
+    fireEvent.click(button('Encrypt and send to GitHub'));
+    expect(await screen.findByText(/Encrypted portfolio sent to someone\/nepse-portfolio/, {}, SLOW)).toBeTruthy();
+    const sent = () => github.calls.filter((c) => c.method === 'PUT');
+    expect(sent()[0]).toMatchObject({ url: FILE_API, auth: 'Bearer test-token', body: { branch: 'main', message: 'Update encrypted portfolio' } });
+    expect(sent()[0].body.sha).toBeUndefined();                                     // a new file
+    expect(github.file).not.toMatch(/NABIL|transactions/);
+    expect((await decryptJson(JSON.parse(github.file!), PASS)).transactions).toHaveLength(12);
+
+    fireEvent.click(button('Encrypt and send to GitHub'));
+    await waitFor(() => expect(sent()).toHaveLength(2), SLOW);
+    expect(sent()[1].body.sha).toBe('abc123');                                      // an update names the version it replaces
+    cleanup();
+
+    // another device, which already holds one real transaction
+    localStorage.setItem(KEY, JSON.stringify({ version: 1, demo: false, audit: [], plans: {}, watchlist: [], transactions: [{ ...DEMO_TXNS[0], id: 'mine1' }], settings: { sync: SYNC } }));
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    await open('/settings');
+    typePassphrase('not the passphrase');
+    fireEvent.click(button('Load from GitHub'));
+    expect(await screen.findByText('Wrong passphrase or corrupted file', {}, SLOW)).toBeTruthy();
+    expect(confirm).not.toHaveBeenCalled();
+
+    typePassphrase(PASS);
+    fireEvent.click(button('Load from GitHub'));
+    expect(await screen.findByText('Nothing was changed.', {}, SLOW)).toBeTruthy();                // answered "Cancel"
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('Replace the 1 transaction in this browser'));
+    expect(stored().transactions).toHaveLength(1);
+
+    confirm.mockReturnValue(true);
+    fireEvent.click(button('Load from GitHub'));
+    expect(await screen.findByText('Your portfolio was loaded from GitHub into this browser.', {}, SLOW)).toBeTruthy();
+    await waitFor(() => expect(stored().transactions).toHaveLength(12));
+    expect(stored().settings.sync.repo).toBe('someone/nepse-portfolio');            // what this browser needs for sending survives
+    expectHealthy();
+  }, 30000);
+
+  it('restores a plain backup and opens an encrypted file, refusing files that are neither', async () => {
+    const some = (n: number) => ({ version: 1, watchlist: [], plans: {}, transactions: DEMO_TXNS.slice(0, n).map((t, i) => ({ ...t, id: `t${i}` })) });
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    await open('/settings');
+    pick('Plain backup to restore', 'hello');
+    expect(await screen.findByText('That file is not a portfolio backup.', {}, WAIT)).toBeTruthy();
+    pick('Plain backup to restore', JSON.stringify({ something: 'else' }));
+    expect(await screen.findByText('That file does not contain a portfolio.', {}, WAIT)).toBeTruthy();
+    pick('Plain backup to restore', JSON.stringify(some(3)));
+    expect(await screen.findByText('Backup restored.', {}, WAIT)).toBeTruthy();
+    await waitFor(() => expect(stored().transactions).toHaveLength(3));
+
+    pick('Encrypted file to open', JSON.stringify(await encryptJson(some(5), PASS)));
+    expect(await screen.findByText(/Type your passphrase in step 1 first/, {}, WAIT)).toBeTruthy();
+    typePassphrase(PASS);
+    pick('Encrypted file to open', 'hello');
+    expect(await screen.findByText('That file is not an encrypted portfolio.', {}, WAIT)).toBeTruthy();
+    pick('Encrypted file to open', JSON.stringify(await encryptJson(some(5), PASS)));
+    expect(await screen.findByText('The encrypted file was decrypted and loaded into this browser.', {}, SLOW)).toBeTruthy();
+    await waitFor(() => expect(stored().transactions).toHaveLength(5));
+    expectHealthy();
+  }, 30000);
+
+  it('downloads the file and says where to find it', async () => {
+    const blobs: Blob[] = [];
+    URL.createObjectURL = (b: Blob) => { blobs.push(b); return 'blob:test'; };
+    URL.revokeObjectURL = () => undefined;
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+    useDemoPortfolio();
+    await open('/settings');
+    typePassphrase(PASS);
+    fireEvent.click(button('Download encrypted file'));
+    expect(await screen.findByText(/Saved as portfolio\.enc\.json\. Look in your Downloads folder/, {}, { timeout: 8000 })).toBeTruthy();
+    expect(blobs).toHaveLength(1);
+    expectHealthy();
+  });
+
+  it('offers a text box when the browser refuses to copy, and warns about DEMO or empty portfolios', async () => {
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async () => { throw new Error('denied'); } } });
+    await open('/settings');
+    expect(screen.getByText(/You have no transactions yet/)).toBeTruthy();
+    cleanup();
+    useDemoPortfolio();
+    await open('/settings');
+    expect(screen.getByText(/This would send sample data, not your holdings/)).toBeTruthy();
+    typePassphrase(PASS);
+    fireEvent.click(button('Copy as text instead'));
+    const box = await screen.findByLabelText('Encrypted text to copy', {}, { timeout: 8000 }) as HTMLTextAreaElement;
+    expect(JSON.parse(box.value).cipher).toBe('AES-256-GCM');
+    expectHealthy();
+  });
+
+  it('works out the repository from a GitHub Pages address', () => {
+    expect(repoFromLocation({ hostname: 'lhakpa-88.github.io', pathname: '/nepse-portfolio/' })).toBe('lhakpa-88/nepse-portfolio');
+    expect(repoFromLocation({ hostname: 'localhost', pathname: '/' })).toBe('');
+    expect(repoFromLocation({ hostname: 'example.github.io', pathname: '/' })).toBe('');
   });
 });
 

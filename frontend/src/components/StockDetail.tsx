@@ -137,7 +137,7 @@ export function StockDetail({ symbol, onClose }: { symbol: string; onClose: () =
 
           {a && (
             <>
-              <div className="grid gap-4 lg:grid-cols-2">
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                 <Card title={`Technical indicators${m.analysis?.sessionInProgress && t.lastDate ? ` · through the ${shortDate(t.lastDate)} close` : ''}`}>
                   <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
                     {[
@@ -172,7 +172,7 @@ export function StockDetail({ symbol, onClose }: { symbol: string; onClose: () =
               </div>
 
               <Card title="How the scores were built (transparent methodology)">
-                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
                   <ScoreBlock title="Fundamental" s={a.fundamental} weight={w.fundamental} />
                   <ScoreBlock title="Technical" s={a.technical} weight={w.technical} />
                   <ScoreBlock title="Valuation" s={a.valuation} weight={w.valuation} />

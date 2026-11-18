@@ -64,25 +64,45 @@ Files are read in your browser. Nothing is uploaded anywhere.
 ## Targets, stop-losses and your thesis
 
 On the Holdings tab, type a **target** and **stop** price next to any stock. They drive the "target reached" and
-"stop-loss breached" signals in the dashboard and in Telegram (after you re-sync the encrypted file).
+"stop-loss breached" signals in the dashboard and in your alerts (after you send the encrypted file again, see
+below).
 
 ## Exporting and reports
 
 * **Export Excel** — holdings, summary and the full ledger in one workbook.
 * **Print / PDF report** — prints the current page; choose "Save as PDF".
 * Buy/Sell Analysis and Screener each have **Export CSV**.
-* Settings → *Download plain backup* saves everything as JSON; *Download encrypted file* saves an encrypted copy.
+* Settings → first card → *More* → **Download plain backup** saves everything as a readable JSON file. Keep it
+  somewhere private and never put it on GitHub.
 
 **Back up regularly.** Your data lives in this browser's storage. Clearing site data, a private window or a new
-device starts empty until you restore a backup or pull the encrypted file.
+device starts empty until you restore a backup or load the encrypted file (Settings → first card → *More* →
+**Load from GitHub**, with your passphrase).
+
+## Sending your holdings to the alert pipeline
+
+Alerts and reports about *your* positions are produced on GitHub, which cannot see your browser. You give it an
+encrypted copy. The first card on the **Settings** page does this in three steps:
+
+1. **Type your passphrase** — the one saved in GitHub as the secret `PORTFOLIO_PASSPHRASE` (12 characters or
+   more). The card shows how many characters are still needed.
+2. **Create the encrypted file** — **Download encrypted file**, or **Copy as text instead**. The result appears
+   right under the buttons.
+3. **Put it in your GitHub repository** — **Open the upload page** and drop the file in, or **Open GitHub to
+   paste**; then commit. The line underneath says whether GitHub has the file and when it was created.
+
+Do this again after adding or correcting transactions or changing a target or stop: the card reminds you when this
+browser has changed since the file on GitHub was made. The first-time setup, including the passphrase secret, is in
+[DEPLOYMENT.md](DEPLOYMENT.md#6-give-the-pipeline-your-holdings-encrypted).
 
 ## A two-minute daily routine
 
-1. Read the Telegram evening report. If nothing "needs attention", you are done.
+1. Read the evening report (email or Telegram). If nothing "needs attention", you are done.
 2. Otherwise open the dashboard → **Overview → Needs your attention** → click the stock for the evidence.
 3. If you are considering a trade, open **Buy/Sell Analysis → Selling / Buying calculator** to see the result
    after brokerage, SEBON fee, DP charge and capital-gains tax, including the break-even price.
-4. Record any trade you make the same day so the figures stay correct, then re-sync the encrypted file.
+4. Record any trade you make the same day so the figures stay correct, then send the encrypted file again
+   (Settings, first card).
 
 Weekly: read the Friday review. Monthly: open **Risk Analysis** and act on the diversification suggestions.
 

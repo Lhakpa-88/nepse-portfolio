@@ -60,7 +60,7 @@ The push starts two workflows (repository → **Actions**):
 
 | Workflow | What it does | Duration |
 |----------|--------------|----------|
-| *Tests* | Runs the 57 Python tests and the 48 dashboard tests (calculations, encryption, and every page and view rendered with sample data), then a production build | 2–3 min |
+| *Tests* | Runs the 59 Python tests and the 60 dashboard tests (calculations, encryption, and every page and view rendered with sample data), then a production build | 2–3 min |
 | *Market pipeline and deploy* | Downloads prices, a year of history and fundamentals; analyses; collects news; publishes the site | 8–15 min the first time, 2–3 min afterwards |
 
 When *Market pipeline and deploy* is green, open the site:
@@ -109,22 +109,37 @@ Your transactions stay in your browser. For position-aware alerts the pipeline n
    safe. If you lose it, the encrypted file cannot be recovered.
 3. **Save the passphrase in GitHub first**: add the secret `PORTFOLIO_PASSPHRASE`. Doing this before the upload
    means the very first run can read the file.
-4. **Create the encrypted file**: dashboard → Settings → *Privacy, backup & encrypted sync* → type the same
-   passphrase → **Download encrypted file**. The file must be named exactly `portfolio.enc.json` (if the browser
-   saved it as `portfolio.enc (1).json`, rename it).
-5. **Upload it** to the folder `data/private/` of the repository: open
-   `https://github.com/<username>/nepse-portfolio/upload/main/data/private`, drop the file in, and click
-   **Commit changes**. This starts a pipeline run.
-6. **Check the run page** (Actions tab). It shows *"Your portfolio was loaded"*; if the passphrase does not match
-   it shows *"Your portfolio was NOT loaded"* with the reason.
+4. **Create the encrypted file**: dashboard → **Settings**. The first card, *Send my holdings to the alert
+   pipeline*, walks through it:
+   * **Step 1 on the card**: type the same passphrase. A line under the box counts the characters still needed;
+     the two buttons of step 2 switch on once it is long enough.
+   * **Step 2 on the card**: click **Download encrypted file** (it is saved as `portfolio.enc.json` in your
+     Downloads folder), or **Copy as text instead** if you would rather paste than look for a file.
+5. **Put it on GitHub** with the buttons in **step 3 on the card**:
+   * if you downloaded: **Open the upload page**, drop the file onto it and click **Commit changes**. The file
+     must be named exactly `portfolio.enc.json` (if the browser saved it as `portfolio.enc (1).json`, rename it
+     first);
+   * if you copied: **Open GitHub to paste**, paste into the large text box, click **Commit changes…** and then
+     **Commit changes** in the box that opens.
+
+   Either way this starts a pipeline run. Without the card, the place is the folder `data/private/`:
+   `https://github.com/<username>/nepse-portfolio/upload/main/data/private`.
+6. **Check**. The line at the bottom of step 3 changes to *GitHub has your encrypted file* (click **Check
+   again**). The run page (Actions tab) shows *"Your portfolio was loaded"*; if the passphrase does not match it
+   shows *"Your portfolio was NOT loaded"* with the reason.
 
 For immediate proof, run the workflow with the command `report daily`: the report that arrives lists your holdings.
 
-Repeat steps 4 and 5 whenever you add transactions or change a target or stop price.
+Repeat steps 4 and 5 whenever you add transactions or change a target or stop price. The card tells you when this
+browser has changed since the file on GitHub was created.
+
+Only the encrypted file belongs in that folder. If anything readable is put there instead (a plain backup, for
+example), the run fails with *"The file in data/private is not encrypted"*: see [SECURITY.md](SECURITY.md).
 
 *One-click alternative to steps 4 and 5:* create a fine-grained personal access token (GitHub → Settings →
 Developer settings → Fine-grained tokens → only this repository → Repository permissions → **Contents: Read and
-write**), paste it and the repository name into Settings, then use **Encrypt & push to GitHub**.
+write**). On the card open **More**, paste the token under *One-click sending*, type the passphrase in step 1 and
+use **Encrypt and send to GitHub**.
 
 ## 7. Verify
 

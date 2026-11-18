@@ -70,7 +70,7 @@ export default function Intelligence() {
                     {n.symbols.map((s) => <button key={s} onClick={() => open(s)} className={`chip ${held.has(s) ? 'bg-accent/20 text-accent' : 'bg-line/60 text-ink'} hover:underline`}>{s}</button>)}
                     {n.sectors.map((s) => <span key={s} className="chip bg-line/40 text-mute">{s}</span>)}
                   </div>
-                  <div className="mt-1.5 grid gap-x-6 gap-y-0.5 text-xs text-mute md:grid-cols-3">
+                  <div className="mt-1.5 grid grid-cols-1 gap-x-6 gap-y-0.5 text-xs text-mute md:grid-cols-3">
                     <div><b className="text-ink">Significance:</b> {n.why}</div>
                     <div><b className="text-ink">Impact on my holdings:</b> <span className={rel.level === 2 ? 'text-accent' : ''}>{rel.text}</span></div>
                     <div><b className="text-ink">Suggested action:</b> {rel.level === 0 ? 'None' : n.action ?? 'Read the source; no action indicated by the headline alone'}</div>
@@ -79,7 +79,7 @@ export default function Intelligence() {
             </div>
           )}
           <Card title="Sources monitored">
-            <div className="grid gap-2 text-sm md:grid-cols-2 xl:grid-cols-3">
+            <div className="grid grid-cols-1 gap-2 text-sm md:grid-cols-2 xl:grid-cols-3">
               {Object.entries(m.news.sources).map(([k, v]: [string, any]) => (
                 <div key={k} className="flex items-center justify-between rounded border border-line px-3 py-1.5">
                   <span>{v.label ?? k}</span><span className={v.ok ? 'text-up' : 'text-down'}>{v.ok ? `${v.count} items` : `failed: ${String(v.error ?? '').slice(0, 40)}`}</span>

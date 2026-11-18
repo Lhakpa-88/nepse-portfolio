@@ -43,7 +43,7 @@ function IdeaCard({ a, rank }: { a: StockAnalysis; rank?: number }) {
         <div className="flex items-center justify-between"><span className="text-mute">Technical</span><ScoreBar value={a.technical.score} /></div>
         <div className="flex items-center justify-between"><span className="text-mute">Valuation</span><ScoreBar value={a.valuation.score} /></div>
       </div>
-      <dl className="mt-3 grid gap-x-6 gap-y-1 text-sm md:grid-cols-2">
+      <dl className="mt-3 grid grid-cols-1 gap-x-6 gap-y-1 text-sm md:grid-cols-2">
         <div><dt className="inline text-mute">Entry range: </dt><dd className="num inline">{lv ? `Rs ${npr(lv.entryLow)} – ${npr(lv.entryHigh)}` : 'n/a'}{p.inZone && <span className="ml-1 text-up">(in zone now)</span>}</dd></div>
         <div><dt className="inline text-mute">Holding period: </dt><dd className="inline">{holdingPeriod(a, p.action)}</dd></div>
         <div><dt className="inline text-mute">Upside scenario: </dt><dd className="num inline">{lv?.upsideTarget ? `Rs ${npr(lv.upsideTarget)} (${pct(lv.upsidePct, 1)}) to prior resistance / 52-week high` : 'No resistance above price in the data window'}</dd></div>
@@ -51,7 +51,7 @@ function IdeaCard({ a, rank }: { a: StockAnalysis; rank?: number }) {
         <div><dt className="inline text-mute">Recent results: </dt><dd className="inline">{f ? `FY ${f.period?.fiscalYear} ${String(f.period?.quarter).toUpperCase()}: EPS ${num(f.eps, 1)} (${pct(f.epsGrowthYoY, 0)} YoY), net profit ${pct(f.profitGrowthYoY, 0)} YoY` : 'not available'}</dd></div>
         <div><dt className="inline text-mute">Performance: </dt><dd className="num inline">1M {pct(a.tech.ret1m, 1)} · 3M {pct(a.tech.ret3m, 1)} · 1Y {pct(a.tech.ret1y, 1)}</dd></div>
       </dl>
-      <div className="mt-3 grid gap-3 text-sm md:grid-cols-2">
+      <div className="mt-3 grid grid-cols-1 gap-3 text-sm md:grid-cols-2">
         <div><div className="label !text-up">Positives</div><ul className="list-disc pl-4">{(positives.length ? positives : ['No standout positive signals beyond the scores above']).slice(0, 4).map((x) => <li key={x}>{x}</li>)}</ul></div>
         <div><div className="label !text-down">Negatives / risks</div><ul className="list-disc pl-4">{(negatives.length ? negatives : ['No specific red flags in the tracked data']).slice(0, 4).map((x) => <li key={x}>{x}</li>)}</ul></div>
       </div>
@@ -92,7 +92,7 @@ export default function Opportunities() {
       {cat === 'avoid' && <Banner level="warn">Stocks here have a High risk score, negative earnings, or a very low quality score. Listed so you can avoid them, not as short ideas.</Banner>}
       {cat === 'trading' && <Banner level="warn">Short-term setups are driven by price and volume only. A bullish chart does not make a stock a long-term investment; check the fundamental score on each card.</Banner>}
       {list.length === 0 ? <Empty>No stocks currently meet this screen's criteria. That is a valid result: the screen does not lower its bar to fill the list.</Empty>
-        : <div className="grid gap-4 xl:grid-cols-2">{list.map((a, i) => <IdeaCard key={a.symbol} a={a} rank={cat === 'top10' ? i + 1 : undefined} />)}</div>}
+        : <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">{list.map((a, i) => <IdeaCard key={a.symbol} a={a} rank={cat === 'top10' ? i + 1 : undefined} />)}</div>}
     </>
   );
 }

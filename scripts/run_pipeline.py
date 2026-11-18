@@ -76,7 +76,16 @@ NOTED: set[str] = set()
 
 def note_portfolio(portfolio, how: str) -> None:
     """Says once, on the run page, whether the private portfolio could be used - never anything about its content."""
-    if "portfolio" in NOTED or not secure_store.logs_are_public():
+    if "portfolio" in NOTED:
+        return
+    if how == secure_store.NOT_ENCRYPTED:
+        # The one portfolio problem that fails the run (GitHub then emails the owner): the file is public, so
+        # if it is readable it has to be dealt with now, not noticed some day in a log.
+        NOTED.add("portfolio")
+        ERRORS.append("portfolio file")
+        annotate("error", "The file in data/private is not encrypted", how[0].upper() + how[1:] + ".")
+        return
+    if not secure_store.logs_are_public():
         return
     NOTED.add("portfolio")
     if portfolio is not None:

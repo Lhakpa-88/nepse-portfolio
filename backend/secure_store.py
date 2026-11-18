@@ -2,7 +2,7 @@
 
 Order of precedence:
   1. data/private/portfolio.enc.json decrypted with env PORTFOLIO_PASSPHRASE
-     (file produced by the dashboard: Settings -> Encrypt & push / Download encrypted file)
+     (file produced by the dashboard: Settings -> "Send my holdings to the alert pipeline")
   2. env PORTFOLIO_JSON (a plain backup pasted into a GitHub Actions secret) - simple alternative
 Returns None when neither is configured: alerts are then market-only.
 """
@@ -60,14 +60,28 @@ def encrypt_blob(obj: dict, passphrase: str, iterations: int = 600000) -> dict:
             "ct": base64.b64encode(ct).decode()}
 
 
+NOT_ENCRYPTED = ("the file in data/private is not an encrypted portfolio. Create it again in the dashboard (Settings - "
+                 "first card) and replace it. If a plain backup or a list of holdings was uploaded there, anyone can "
+                 "read it in this repository - see docs/SECURITY.md")
+
+
+def _encrypted_file() -> dict | None:
+    """The blob in data/private, or None when the file is anything other than the dashboard's encrypted format."""
+    try:
+        blob = json.loads(ENC_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return blob if isinstance(blob, dict) and {"salt", "iv", "ct", "iter"} <= blob.keys() else None
+
+
 def load_portfolio() -> tuple[dict | None, str]:
     """Returns (portfolio, how) where how explains the source or why it is unavailable."""
     passphrase = os.environ.get("PORTFOLIO_PASSPHRASE", "")
-    if ENC_PATH.exists() and passphrase.strip():
-        try:
-            blob = json.loads(ENC_PATH.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            return None, "encrypted portfolio file is not valid JSON (upload it again from the dashboard)"
+    blob = _encrypted_file() if ENC_PATH.exists() else None
+    if ENC_PATH.exists() and blob is None:
+        # Reported whatever else is configured: something readable may be lying in a public repository.
+        return None, NOT_ENCRYPTED
+    if blob is not None and passphrase.strip():
         # Try the secret exactly as stored, then without surrounding whitespace: a value pasted into GitHub
         # Secrets often carries a stray line break that was never part of the passphrase.
         for candidate in dict.fromkeys((passphrase, passphrase.strip())):

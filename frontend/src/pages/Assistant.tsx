@@ -61,7 +61,7 @@ export default function Assistant() {
           {msgs.length === 0 && (
             <div>
               <div className="mb-2 text-sm text-mute">Ask about your portfolio. Each answer re-reads your current holdings and the latest market data, and marks what is fact, estimate or opinion.</div>
-              <div className="grid gap-2 md:grid-cols-2">{EXAMPLES.map((e) => <button key={e} className="rounded-md border border-line px-3 py-2 text-left text-sm hover:border-accent hover:text-accent" onClick={() => ask(e)}>{e}</button>)}</div>
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-2">{EXAMPLES.map((e) => <button key={e} className="rounded-md border border-line px-3 py-2 text-left text-sm hover:border-accent hover:text-accent" onClick={() => ask(e)}>{e}</button>)}</div>
             </div>
           )}
           {msgs.map((x, i) => (x.role === 'user' ? (

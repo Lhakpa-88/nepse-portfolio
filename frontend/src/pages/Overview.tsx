@@ -121,7 +121,7 @@ export default function Overview() {
               <Kpi label="Market trend" value={regime?.label ?? 'Unknown'} sub={m.market?.breadth ? `${m.market.breadth.advancers} up · ${m.market.breadth.decliners} down` : ''}
                 hint="From NEPSE vs its 20/50/200-day averages, 1-month momentum and today's breadth." />
             </div>
-            <div className="grid gap-6 md:grid-cols-3">
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
               <Movers title="Top gainers" rows={gainers} metric="pct" />
               <Movers title="Top losers" rows={losers} metric="pct" />
               <Movers title="Most traded (turnover)" rows={traded} metric="turnover" />
@@ -148,7 +148,7 @@ export default function Overview() {
       </Card>
 
       {allSymbols.length > 0 && (
-        <div className="grid gap-4 xl:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
           <Card title="Portfolio value over time" right={<span className="text-xs text-mute">{series.length ? `${series[0].date} → ${series[series.length - 1].date}` : ''}</span>}>
             {!hist ? <Empty>Loading price history…</Empty> : series.length < 2 ? <Empty>Not enough price history yet to chart value over time.</Empty> : (
               <>

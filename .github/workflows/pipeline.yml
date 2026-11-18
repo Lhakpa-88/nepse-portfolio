@@ -12,7 +12,7 @@ on:
   # therefore sent once per day by whichever run gets there first, and the two report windows have a spare trigger.
   schedule:
     - cron: '10 4 * * 0-4'        # 09:55 NPT  early trigger for the morning brief
-    - cron: '45 4 * * 0-4'        # 10:30 NPT  pre-market brief (spare)
+    - cron: '45 4 * * 0-4'        # 10:30 NPT  morning brief (spare)
     - cron: '15,45 5-8 * * 0-4'   # 11:00-14:30 NPT  every 30 min during trading
     - cron: '15 9 * * 0-4'        # 15:00 NPT  close
     - cron: '35 9 * * 0-4'        # 15:20 NPT  post-close update, P&L and alerts

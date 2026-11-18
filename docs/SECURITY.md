@@ -45,7 +45,9 @@ custom domain or subdomain removes the overlap.
 A static site has no server-side login. Protection therefore comes from where the data is:
 
 * Opening the dashboard URL on another device shows **market data only** and an empty portfolio.
-* To see your portfolio elsewhere you must pull the encrypted file and enter the passphrase, or restore a backup.
+* To see your portfolio elsewhere you must load the encrypted file and enter the passphrase (Settings → first
+  card → *More* → **Load from GitHub**), or restore a backup. Before either replaces transactions that are
+  already in that browser, the dashboard asks you to confirm.
 
 If you need the page itself hidden, use a private repository with a paid GitHub plan, or put the site behind an
 access proxy such as Cloudflare Access.
@@ -67,13 +69,37 @@ keep a plain backup somewhere safe and offline.
 If you would rather not publish even an encrypted file, use the `PORTFOLIO_JSON` secret instead: paste a plain
 backup into a GitHub secret (limit about 48 KB). The trade-off is updating the secret by hand after each trade.
 
+### If a readable file was uploaded by mistake
+
+Only the dashboard's encrypted file belongs in `data/private/`. A plain backup, an Excel export or a list of
+holdings uploaded there (or anywhere else in a public repository) can be read by anyone. Two things notice it:
+
+* the pipeline run fails with the error *"The file in data/private is not encrypted"* (GitHub emails the owner
+  about failed runs unless that notification was turned off), and
+* the first card on the Settings page says that the file on GitHub is a plain backup, or not an encrypted
+  portfolio.
+
+What to do:
+
+1. **Replace or delete the file straight away** (Settings → first card → steps 2 and 3, or delete it on GitHub).
+   That removes it from the current version of the repository.
+2. **The old version is still in the repository's history**, where it can still be opened. The simplest complete
+   fix is to delete the repository on GitHub (its Settings → General → Danger Zone) and publish the project again
+   from your computer as in [DEPLOYMENT.md](DEPLOYMENT.md): the copy on your computer never contained that file.
+   Then add the secrets again. Making the repository private in the meantime hides the history, but on a free
+   plan it also takes the GitHub Pages site offline.
+3. Such a file holds your transactions, watchlist, targets and settings. It holds no password, token or key, so
+   nothing needs to be rotated because of it.
+
 ## Secrets hygiene
 
 * `.gitignore` blocks `.env*`, `portfolio-backup-*.json`, `*.portfolio.json` and everything in `data/private/`
   except the encrypted file.
 * The Telegram sender never logs the request URL (it contains the token) and reports only HTTP status codes.
-* The fine-grained GitHub token for one-click sync should be limited to **this repository** with **Contents:
+* The fine-grained GitHub token for one-click sending should be limited to **this repository** with **Contents:
   read and write** only. Revoke it at any time in GitHub → Settings → Developer settings.
+* The passphrase typed into the Settings page is never stored: it is used for that one encryption and is gone when
+  the page is closed or reloaded.
 * Rotate a leaked Telegram token with `/revoke` in @BotFather.
 
 ## Data integrity controls
@@ -98,6 +124,10 @@ decision support and every trade is entered by you.
 ## Third parties
 
 * Market data requests go from GitHub's servers to the data providers; they contain no personal data.
+* The Settings page asks GitHub whether the encrypted file is in your repository, so it can tell you. That request
+  goes from your browser to `api.github.com` (or `raw.githubusercontent.com`) and names only the repository,
+  branch and file path. If you saved a GitHub token for one-click sending it is sent with that request, which is
+  what lets a private repository be checked.
 * If you add a Claude API key in Settings, free-form assistant questions send a snapshot of your holdings and
   market data to Anthropic's API from your browser. Leave the key empty to keep everything local.
 * If you set `ANTHROPIC_API_KEY` as a GitHub secret, the daily report text (which includes your position

@@ -111,7 +111,7 @@ Also add `SMTP_HOST` (for example `smtp.mail.yahoo.com`) and, if the provider us
 | Watchlist in range | A watched stock enters your buy range |
 | Buy opportunity | A top-3 ranked stock is inside its entry zone (can be turned off) |
 | Critical / holding news | Monetary policy, tax changes, suspensions, or High-impact news naming a stock you hold |
-| Reports | Pre-market brief, daily report, Friday weekly review, monthly review |
+| Reports | Morning brief, daily report, Friday weekly review, monthly review |
 
 Example:
 

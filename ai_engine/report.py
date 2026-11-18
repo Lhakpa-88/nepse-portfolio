@@ -38,7 +38,8 @@ def _period_return(out: Path, symbol: str, sessions: int):
 
 def build(kind: str, ctx: dict, out: Path, sent_alerts: list[dict] | None = None) -> str:
     """kind: 'premarket' | 'daily' | 'weekly' | 'monthly'"""
-    title = {"premarket": "PRE-MARKET BRIEF", "daily": "DAILY PORTFOLIO REPORT", "weekly": "WEEKLY PERFORMANCE & RISK REVIEW",
+    # "premarket" is called the morning brief: when GitHub starts the first run late it goes out after the open
+    title = {"premarket": "MORNING BRIEF", "daily": "DAILY PORTFOLIO REPORT", "weekly": "WEEKLY PERFORMANCE & RISK REVIEW",
              "monthly": "MONTHLY PORTFOLIO HEALTH REVIEW"}[kind]
     fresh = ctx["status"].get("freshness", {})
     L = [f"NEPSE {title}", f"Market date {ctx['prices'].get('marketDate', 'n/a')} | data {fresh.get('state', 'unknown')}", ""]

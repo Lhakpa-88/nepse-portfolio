@@ -63,7 +63,7 @@ function SellCalc() {
     return list;
   }, [sp, custom]);
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
       <Card title="Selling calculator — inputs">
         <div className="grid grid-cols-2 gap-3">
           <Field label="Stock symbol"><input className="input uppercase" list="symbols-all" value={symbol} onChange={(e) => setSymbol(e.target.value.toUpperCase())} /></Field>
@@ -145,7 +145,7 @@ function BuyCalc() {
   const targets = [...SCEN.map((s) => ({ label: `${s > 0 ? '+' : ''}${s}%`, price: p * (1 + s / 100) })), ...custom.split(/[ ,;]+/).map(Number).filter((x) => x > 0).map((x) => ({ label: 'Custom', price: x }))];
   const cash = state.settings.cash;
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
       <Card title="Buying calculator — inputs">
         <div className="grid grid-cols-2 gap-3">
           <Field label="Stock symbol"><input className="input uppercase" list="symbols-all" value={symbol} onChange={(e) => setSymbol(e.target.value.toUpperCase())} /></Field>
@@ -220,7 +220,7 @@ function Recommendations() {
         <Card title={<span>{a.symbol} — why <Badge>{a.action}</Badge></span>} right={<button className="btn" onClick={() => open(a.symbol)}>Full analysis & chart</button>}>
           <p className="text-sm"><b>Suggested action:</b> {a.suggested}</p>
           {a.flags.length > 0 && <div className="mt-3 space-y-1">{a.flags.map((f) => <div key={f.text} className={`text-sm ${f.level === 'critical' ? 'text-down' : f.level === 'warn' ? 'text-warn' : 'text-mute'}`}>{f.level === 'critical' ? '■' : '▲'} {f.text}</div>)}</div>}
-          <div className="mt-3 grid gap-4 md:grid-cols-3">
+          <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-3">
             <div><div className="label">Supporting evidence</div><ul className="list-disc space-y-1 pl-4 text-sm">{a.reasons.map((r) => <li key={r}>{r}</li>)}</ul></div>
             <div><div className="label">Potential downside</div><p className="text-sm">{a.downside}</p><div className="label mt-3">Horizon</div><p className="text-sm">{a.horizon} · review: {a.review}</p></div>
             <div><div className="label">What would invalidate this</div><ul className="list-disc space-y-1 pl-4 text-sm">{a.invalidation.map((r) => <li key={r}>{r}</li>)}</ul></div>

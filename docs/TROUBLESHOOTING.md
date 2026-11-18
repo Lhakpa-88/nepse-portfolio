@@ -6,7 +6,12 @@
 |---------|--------------|-----|
 | "Market data unavailable. No prices are shown." | The pipeline has not run yet, or the data files were not deployed | Actions → *Market pipeline and deploy* → Run workflow (`all`). Locally: `python -m scripts.run_pipeline all --dry-run` |
 | Red or amber "Data warning" banner | Prices are one or more sessions old: a market holiday, a source outage, or schedules stopped | Check Settings → *Market data sources & health* and the latest Actions run. Add a holiday to `config/holidays.json` if the market was closed |
-| My portfolio is empty on a new device or browser | Data is stored per browser | Settings → Pull & decrypt from GitHub, or restore a backup |
+| My portfolio is empty on a new device or browser | Data is stored per browser | Settings → first card → *More* → **Load from GitHub** (type your passphrase in step 1 first), or restore a backup |
+| *Download encrypted file* and *Copy as text instead* are greyed out | The passphrase in step 1 is shorter than 12 characters | Keep typing: the line under the box counts the characters still needed, and the buttons switch on at 12 |
+| "Your browser did not allow automatic copying" | The browser blocked access to the clipboard | Use the text box that appears under the buttons (click in it, Ctrl+A, Ctrl+C), or use **Download encrypted file** |
+| Settings says "GitHub does not have an encrypted file yet" after I uploaded | The upload was not committed, or the file is in another folder or has another name | Click **Check again**. On GitHub the file must be `data/private/portfolio.enc.json` on the `main` branch; a browser name such as `portfolio.enc (1).json` does not count |
+| Settings says the file on GitHub "is not an encrypted portfolio" or "is a plain backup" | Something other than the encrypted file was put there | Create the file again (step 2) and replace it. For a plain backup, also read "If a readable file was uploaded by mistake" in SECURITY.md |
+| Settings says "GitHub shows no public repository called …" | The repository name under *More* is mistyped, or the repository is private | Correct the name, or clear the box to use the one from the site address. A private repository needs the token under *More* |
 | A holding shows "no price" | The symbol is misspelt, or has not traded for more than 45 days (suspended, merged or delisted) | Correct the symbol; for a merger add an *Other adjustment* and a transaction in the new symbol. A stock that simply has not traded yet today keeps its last close, shown with its date in brackets |
 | A price has a date in brackets, e.g. `12,062.0 (17 Nov)` | That stock has no trade yet in the latest session | Nothing to fix: it is valued at its last real closing price until it trades |
 | Signals do not move during the day although prices do | Intended: while the market is open, indicators and signals use completed sessions only | They update after the close. Stop-loss, target and support alerts still use the live price |
@@ -33,6 +38,7 @@
 | `prices: failed` in the log | All price sources failed. Open the three URLs in `docs/DATA_SOURCES.md` in a browser. If a site changed its JSON, update the matching class in `backend/sources.py` and reorder `config/sources.json` |
 | Fundamentals coverage is low | They refresh gradually (150 companies per run). It completes within a few runs |
 | "encrypted portfolio could not be decrypted" | The `PORTFOLIO_PASSPHRASE` secret does not match the passphrase used in the dashboard |
+| A failed run with "The file in data/private is not encrypted" | The file there is not the one the dashboard makes. Create it again (Settings → first card) and replace it. If it was a plain backup or a list of holdings, it has been readable by anyone: follow "If a readable file was uploaded by mistake" in SECURITY.md |
 | "market-only mode" in the alerts log | No encrypted file or passphrase configured: see DEPLOYMENT.md step 6 |
 | No Telegram message | Run `test-telegram`. 401 = wrong token; 400 = wrong chat id or you never pressed Start in the bot chat |
 | Too many alerts | Raise thresholds or `cooldownDays`, lower `maxAlertsPerRun`, or set `notifyOpportunities` to false in `config/alerts.json` |
@@ -65,7 +71,7 @@ or `FAILED` with a traceback.
 
 ## Recovering from data loss
 
-* **Browser data lost**: Settings → Pull & decrypt from GitHub, or *Restore plain backup*.
+* **Browser data lost**: Settings → first card → *More* → **Load from GitHub**, or **Restore plain backup…**.
 * **`market-data` branch deleted**: run the workflow with `all`; history and fundamentals are re-downloaded.
 * **Passphrase forgotten**: the encrypted file is unrecoverable by design. Restore a plain backup, choose a new
   passphrase, re-encrypt and update the `PORTFOLIO_PASSPHRASE` secret.

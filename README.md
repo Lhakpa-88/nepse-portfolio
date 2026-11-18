@@ -56,7 +56,8 @@ More detail: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 3. **Enter your transactions** — [docs/USER_GUIDE.md](docs/USER_GUIDE.md). Use the Excel template for bulk import.
 4. **Turn on alerts** by Telegram or email — [docs/TELEGRAM_SETUP.md](docs/TELEGRAM_SETUP.md). Telegram is blocked by
    internet providers in Nepal, so check the app works for you; email works on any connection.
-5. **Sync your encrypted portfolio** (Settings → Privacy, backup & encrypted sync) so alerts know your holdings.
+5. **Send your encrypted portfolio** (Settings → first card, three guided steps) so alerts know your holdings —
+   [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#6-give-the-pipeline-your-holdings-encrypted).
 
 ### Run locally
 
@@ -74,8 +75,8 @@ npm run dev            # http://localhost:5173
 
 ```bash
 # tests
-python -m unittest discover -s tests -t . -v     # 57 tests
-cd frontend && npm test                          # 48 tests: calculations, encryption, every page and view rendered
+python -m unittest discover -s tests -t . -v     # 59 tests
+cd frontend && npm test                          # 60 tests: calculations, encryption, every page and view rendered
 ```
 
 Useful pipeline commands (`python -m scripts.run_pipeline --help`):
